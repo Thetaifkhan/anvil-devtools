@@ -1,0 +1,33 @@
+{% extends "tools/_tool_base.html" %}
+{% block tool_body %}
+<div class="tool-panels">
+  <div class="panel">
+    <div class="panel-head"><span>Input</span></div>
+    <textarea id="input" placeholder="Paste JSON to validate…"></textarea>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><span>Result</span></div>
+    <div class="output-area" id="output"></div>
+  </div>
+</div>
+<div class="btn-row" style="margin:1rem 0;">
+  <button class="btn primary" id="validate-btn">Validate ⌘⏎</button>
+  <button class="btn" id="clear-btn">Clear</button>
+</div>
+<div class="status-line neutral" id="status">Paste JSON and press Validate.</div>
+{% endblock %}
+
+{% block education %}
+<h2>How JSON validation works</h2>
+<p>This tool parses your input with the browser's built-in JSON parser and reports the exact failure point rather than a generic error. You'll get a line number, column number, and a plain-English explanation such as "expected ',' or '}' after property value."</p>
+{% endblock %}
+
+{% block faq %}
+<h2>FAQ</h2>
+<div class="faq-item"><h3>Why does it say "Unexpected token" without more detail?</h3><p>That message comes directly from the JSON parser. Anvil adds the line/column location on top of it so you can find the exact spot.</p></div>
+<div class="faq-item"><h3>Does trailing-comma JSON validate?</h3><p>No — standard JSON forbids trailing commas. Remove the comma after the last item in an object or array.</p></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/tools/json_validator.js') }}"></script>
+{% endblock %}

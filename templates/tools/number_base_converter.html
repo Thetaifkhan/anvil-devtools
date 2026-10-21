@@ -1,0 +1,59 @@
+{% extends "tools/_tool_base.html" %}
+{% block tool_body %}
+<div class="tool-panels">
+  <div class="panel" style="min-height:auto;"><div class="panel-head"><span>Binary</span></div><input id="bin" type="text" placeholder="1010" style="padding:.9rem; background:transparent; border:none; color:var(--text); font-family:var(--font-mono); font-size:1rem;"></div>
+  <div class="panel" style="min-height:auto;"><div class="panel-head"><span>Octal</span></div><input id="oct" type="text" placeholder="12" style="padding:.9rem; background:transparent; border:none; color:var(--text); font-family:var(--font-mono); font-size:1rem;"></div>
+</div>
+<div class="tool-panels" style="margin-top:1rem;">
+  <div class="panel" style="min-height:auto;"><div class="panel-head"><span>Decimal</span></div><input id="dec" type="text" placeholder="10" style="padding:.9rem; background:transparent; border:none; color:var(--text); font-family:var(--font-mono); font-size:1rem;"></div>
+  <div class="panel" style="min-height:auto;"><div class="panel-head"><span>Hexadecimal</span></div><input id="hex" type="text" placeholder="a" style="padding:.9rem; background:transparent; border:none; color:var(--text); font-family:var(--font-mono); font-size:1rem;"></div>
+</div>
+<div class="status-line neutral" id="status">Type a value into any field — the others update instantly.</div>
+{% endblock %}
+{% block education %}<h2>Number bases explained</h2><p>Binary (base 2) and hexadecimal (base 16) are the two bases developers touch daily — binary for bitwise logic and flags, hex for memory addresses, colors, and byte-level data. Octal (base 8) is less common today but still appears in Unix file permissions.</p>{% endblock %}
+{% block faq %}<h2>FAQ</h2><div class="faq-item"><h3>Does this support negative numbers?</h3><p>No — this converts non-negative integers. For signed/two's-complement representations, the bit width matters and should be handled explicitly in your own code.</p></div>{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const bin = document.getElementById("bin"), oct = document.getElementById("oct"), dec = document.getElementById("dec"), hex = document.getElementById("hex"), status = document.getElementById("status");
+  let updating = false;
+
+  // Strict per-base character set. Avoids parseInt's "stop at first
+  // invalid digit" gotcha (parseInt("12", 2) === 1, not NaN).
+  const PATTERNS = {
+    2:  /^[01]+$/,
+    8:  /^[0-7]+$/,
+    10: /^\d+$/,
+    16: /^[0-9a-fA-F]+$/,
+  };
+
+  function sync(source, base) {
+    if (updating) return;
+    updating = true;
+    const raw = source.value.trim();
+    if (!raw) { [bin, oct, dec, hex].forEach((f) => { if (f !== source) f.value = ""; }); updating = false; return; }
+    if (!PATTERNS[base].test(raw)) {
+      Anvil.setStatus(status, `"${raw}" isn't a valid base-${base} number.`, "error");
+      updating = false;
+      return;
+    }
+    const n = parseInt(raw, base);
+    if (Number.isNaN(n) || n < 0 || !Number.isFinite(n)) {
+      Anvil.setStatus(status, `"${raw}" isn't a valid base-${base} number.`, "error");
+      updating = false;
+      return;
+    }
+    if (source !== bin) bin.value = n.toString(2);
+    if (source !== oct) oct.value = n.toString(8);
+    if (source !== dec) dec.value = n.toString(10);
+    if (source !== hex) hex.value = n.toString(16);
+    Anvil.setStatus(status, `= ${n.toLocaleString()} in decimal.`, "ok");
+    updating = false;
+  }
+  bin.addEventListener("input", () => sync(bin, 2));
+  oct.addEventListener("input", () => sync(oct, 8));
+  dec.addEventListener("input", () => sync(dec, 10));
+  hex.addEventListener("input", () => sync(hex, 16));
+})();
+</script>
+{% endblock %}

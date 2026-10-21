@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Privacy Policy — Anvil{% endblock %}
+{% block content %}
+<div class="wrap page-content">
+<h1>Privacy Policy</h1>
+<p>Last updated: October 2026. Anvil is designed to minimize data handling: most tools run in your browser, while a small number send input to Anvil's server for conversion or validation.</p>
+
+<h2>Tool input and processing</h2>
+<p>For tools marked as running entirely in your browser, the input you enter stays on your device and is not sent to Anvil's application server. For server-processed tools (including XML/YAML/CSV conversion and SQL formatting), input is transmitted to the application server, processed in memory for the request, and is not intentionally written to an application database or included in application logs. Hosting providers, reverse proxies, or infrastructure may maintain their own request metadata logs; configure and review those services separately. Avoid submitting passwords, production tokens, private keys, or other secrets to server-processed tools.</p>
+
+<h2>What we do collect</h2>
+<p>If analytics is enabled by the site operator, aggregate, privacy-respecting usage data (such as which tool pages are visited) may be collected. This configuration is disabled by default and, when enabled, uses privacy-friendly analytics that avoid tracking individuals across sites.</p>
+
+<h2>Cookies</h2>
+<p>Preferences like theme (light/dark) and favorite/recent tools are stored only in your browser's local storage, not in cookies, and never leave your device.</p>
+
+<h2>Third parties</h2>
+<p>If advertising is enabled by the site operator, ad networks such as Google AdSense may set their own cookies and collect data according to their own policies. This is never enabled without clear disclosure.</p>
+
+<h2>Contact</h2>
+<p>Questions about this policy can be sent via the <a href="/contact">contact page</a>.</p>
+</div>
+{% endblock %}

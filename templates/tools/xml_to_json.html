@@ -1,0 +1,52 @@
+{% extends "tools/_tool_base.html" %}
+{% block privacy_note %}
+<div class="privacy-note">Input is sent to Anvil's server for in-memory conversion. This application does not intentionally store or log tool input; avoid submitting secrets or sensitive data.</div>
+{% endblock %}
+{% block tool_body %}
+<div class="tool-panels">
+  <div class="panel">
+    <div class="panel-head"><span>XML input</span></div>
+    <textarea id="input" placeholder="&lt;user id=&quot;1&quot;&gt;&lt;name&gt;John&lt;/name&gt;&lt;/user&gt;"></textarea>
+  </div>
+  <div class="panel">
+    <div class="panel-head">
+      <span>JSON output</span>
+      <div class="btn-row">
+        <button class="btn" id="copy-btn">Copy</button>
+        <button class="btn" id="download-btn">Download</button>
+      </div>
+    </div>
+    <div class="output-area" id="output"></div>
+    <div class="meta-row" id="meta"></div>
+  </div>
+</div>
+<div class="btn-row" style="margin:1rem 0;"><button class="btn primary" id="run-btn">Convert ⌘⏎</button></div>
+<div class="status-line neutral" id="status">Paste XML and press Convert.</div>
+{% endblock %}
+
+{% block education %}
+<h2>How XML to JSON conversion works</h2>
+<p>Element attributes are placed under an <code>@attributes</code> key, repeated child elements become JSON arrays, and elements with only text content collapse to a plain string value. This keeps the output predictable rather than trying to infer types.</p>
+<h2>Limitations</h2>
+<p>XML namespaces, processing instructions, and mixed text/element content don't map cleanly to JSON. Namespace prefixes are preserved as part of the tag name where present, but namespace resolution is not performed.</p>
+{% endblock %}
+
+{% block faq %}
+<h2>FAQ</h2>
+<div class="faq-item"><h3>Where do XML attributes go?</h3><p>Under an <code>@attributes</code> object on the corresponding JSON node, so they never collide with real child element names.</p></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/tools/api_tool.js') }}"></script>
+<script>
+(function () {
+  const input = document.getElementById("input"), output = document.getElementById("output");
+  const status = document.getElementById("status"), meta = document.getElementById("meta");
+  document.getElementById("run-btn").addEventListener("click", () => {
+    AnvilApi.run({ endpoint: "/api/xml-to-json", body: { text: input.value }, output, status, meta, successMessage: "Converted to JSON." });
+  });
+  document.getElementById("copy-btn").addEventListener("click", (e) => Anvil.copyText(output.textContent, e.target));
+  document.getElementById("download-btn").addEventListener("click", () => Anvil.download("converted.json", output.textContent, "application/json"));
+})();
+</script>
+{% endblock %}

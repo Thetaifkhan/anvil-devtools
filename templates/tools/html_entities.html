@@ -1,0 +1,36 @@
+{% extends "tools/_tool_base.html" %}
+{% block tool_body %}
+<div class="tool-panels">
+  <div class="panel"><div class="panel-head"><span>Input</span></div><textarea id="input" placeholder="&lt;div class=&quot;greeting&quot;&gt;Hi &amp; welcome&lt;/div&gt;"></textarea></div>
+  <div class="panel"><div class="panel-head"><span>Output</span><div class="btn-row"><button class="btn" id="copy-btn">Copy</button></div></div><div class="output-area" id="output"></div></div>
+</div>
+<div class="btn-row" style="margin:1rem 0;">
+  <button class="btn primary" id="encode-btn">Encode ⌘⏎</button>
+  <button class="btn" id="decode-btn">Decode</button>
+</div>
+<div class="status-line neutral" id="status">Enter text and choose Encode or Decode.</div>
+{% endblock %}
+{% block education %}<h2>Why encode HTML entities?</h2><p>Encoding characters like <code>&lt;</code>, <code>&gt;</code> and <code>&amp;</code> prevents them from being interpreted as markup when inserting user-provided text into an HTML page, which is a basic defense against XSS.</p>{% endblock %}
+{% block faq %}<h2>FAQ</h2><div class="faq-item"><h3>Does this replace proper output escaping in my app?</h3><p>No — always use your framework's built-in escaping for real applications. This tool is for one-off inspection and debugging.</p></div>{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const input = document.getElementById("input"), output = document.getElementById("output"), status = document.getElementById("status");
+  document.getElementById("encode-btn").addEventListener("click", () => {
+    const div = document.createElement("div");
+    div.textContent = input.value;
+    output.textContent = div.innerHTML;
+    Anvil.setStatus(status, "Encoded.", "ok");
+  });
+  document.getElementById("decode-btn").addEventListener("click", () => {
+    const textarea = document.createElement("textarea");
+    // A textarea decodes character references without creating arbitrary HTML
+    // elements (which could otherwise trigger image/network requests).
+    textarea.innerHTML = input.value;
+    output.textContent = textarea.value;
+    Anvil.setStatus(status, "Decoded.", "ok");
+  });
+  document.getElementById("copy-btn").addEventListener("click", (e) => Anvil.copyText(output.textContent, e.target));
+})();
+</script>
+{% endblock %}

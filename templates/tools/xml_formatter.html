@@ -1,0 +1,49 @@
+{% extends "tools/_tool_base.html" %}
+{% block privacy_note %}<div class="privacy-note">Formatting runs on the server for reliability; input is never stored.</div>{% endblock %}
+{% block tool_body %}
+<div class="tool-options">
+  <label><input type="checkbox" id="minify"> Minify instead of pretty-print</label>
+  <button class="btn primary" id="run-btn" style="margin-left:auto;">Format ⌘⏎</button>
+</div>
+<div class="tool-panels">
+  <div class="panel">
+    <div class="panel-head"><span>Input</span></div>
+    <textarea id="input" placeholder="&lt;bookstore&gt;&lt;book id=&quot;1&quot;&gt;&lt;title&gt;Example&lt;/title&gt;&lt;/book&gt;&lt;/bookstore&gt;"></textarea>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><span>Output</span><div class="btn-row"><button class="btn" id="copy-btn">Copy</button><button class="btn" id="download-btn">Download</button></div></div>
+    <div class="output-area" id="output"></div>
+    <div class="meta-row" id="meta"></div>
+  </div>
+</div>
+<div class="status-line neutral" id="status">Paste XML and press Format.</div>
+{% endblock %}
+
+{% block education %}
+<h2>How to use the XML Formatter</h2>
+<p>Paste XML and click Format to pretty-print it with two-space indentation, or tick "Minify" to collapse it onto one line. The formatter first checks the document is well-formed, so malformed XML is reported clearly instead of producing garbled output.</p>
+{% endblock %}
+
+{% block faq %}
+<h2>FAQ</h2>
+<div class="faq-item"><h3>Does it validate against a schema?</h3><p>No — this checks the XML is well-formed (correctly nested, properly closed, valid syntax), not that it matches an XSD or DTD schema.</p></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/tools/api_tool.js') }}"></script>
+<script>
+(function () {
+  const input = document.getElementById("input"), output = document.getElementById("output");
+  const status = document.getElementById("status"), meta = document.getElementById("meta");
+  document.getElementById("run-btn").addEventListener("click", () => {
+    AnvilApi.run({
+      endpoint: "/api/xml-format",
+      body: { text: input.value, minify: document.getElementById("minify").checked },
+      output, status, meta, successMessage: "Formatted.",
+    });
+  });
+  document.getElementById("copy-btn").addEventListener("click", (e) => Anvil.copyText(output.textContent, e.target));
+  document.getElementById("download-btn").addEventListener("click", () => Anvil.download("formatted.xml", output.textContent, "application/xml"));
+})();
+</script>
+{% endblock %}

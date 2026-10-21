@@ -1,0 +1,176 @@
+{% extends "tools/_tool_base.html" %}
+{% block tool_body %}
+<div class="panel" style="min-height:auto;">
+  <div class="panel-head"><span>Cron expression</span></div>
+  <div style="padding:.9rem;">
+    <input type="text" id="input" placeholder="0 0 * * *" style="width:100%; background:var(--bg-inset); border:1px solid var(--border); color:var(--text); padding:.6rem; border-radius:var(--radius); font-family:var(--font-mono); font-size:1rem;">
+  </div>
+</div>
+<div class="output-area" id="output" style="margin-top:1rem; font-size:1.05rem; padding:1rem; background:var(--bg-raised); border:1px solid var(--border-soft); border-radius:var(--radius); min-height:auto;"></div>
+<div class="status-line neutral" id="status">Standard 5-field cron: minute hour day-of-month month day-of-week.</div>
+
+<h3 style="margin-top:2rem;">Common examples</h3>
+<div class="tool-grid" id="examples"></div>
+{% endblock %}
+{% block education %}<h2>Cron field reference</h2><pre> ┌───────────── minute (0–59)
+ │ ┌───────────── hour (0–23)
+ │ │ ┌───────────── day of month (1–31)
+ │ │ │ ┌───────────── month (1–12)
+ │ │ │ │ ┌───────────── day of week (0–6, Sun–Sat)
+ │ │ │ │ │
+ * * * * *</pre>{% endblock %}
+{% block faq %}<h2>FAQ</h2><div class="faq-item"><h3>Does this support 6-field cron (with seconds)?</h3><p>This parser handles the standard 5-field format used by cron and most schedulers. Some tools like Quartz add a seconds field — strip it before pasting here.</p></div>{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const input = document.getElementById("input"), output = document.getElementById("output"), status = document.getElementById("status");
+  const DOW = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const DOW_SHORT = ["SUN","MON","TUE","WED","THU","FRI","SAT"];
+  const MONTHS = ["","January","February","March","April","May","June","July","August","September","October","November","December"];
+  const MONTH_SHORT = ["","JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+
+  // Bounds for each of the 5 standard cron fields.
+  const BOUNDS = [
+    { name: "minute",      min: 0, max: 59 },
+    { name: "hour",        min: 0, max: 23 },
+    { name: "day of month", min: 1, max: 31 },
+    { name: "month",        min: 1, max: 12 },
+    { name: "day of week",  min: 0, max: 6  },
+  ];
+
+  function isInt(s) { return /^\d+$/.test(s); }
+
+  function resolveName(value, names) {
+    // Allow case-insensitive JAN/DEC, MON/SUN as well as numeric values.
+    if (!names) return value;
+    const up = String(value).toUpperCase();
+    const i = names.indexOf(up);
+    return i >= 0 ? String(i) : value;
+  }
+
+  function validateField(value, bound, names) {
+    // Reject Quartz-only syntax up front with a clear message instead of
+    // silently rendering "L", "W", "#", "?" as text.
+    if (/[LW#?]/i.test(value)) {
+      throw new Error(`Quartz-only syntax (${value}) is not supported. Use the standard 5-field cron format.`);
+    }
+    if (value === "*") return;
+    // Step expressions: "*/N", "M-N/S", "M/S".
+    const parts = value.split("/");
+    if (parts.length > 2) throw new Error(`Too many '/' in field: ${value}`);
+    if (parts.length === 2) {
+      const [base, stepRaw] = parts;
+      if (!isInt(stepRaw)) throw new Error(`Step value '${stepRaw}' must be a positive integer.`);
+      const step = Number(stepRaw);
+      if (step < 1) throw new Error(`Step value must be ≥ 1, got ${step}.`);
+      if (base !== "*") validateBase(base, bound, names);
+      else return;
+      return;
+    }
+    validateBase(value, bound, names);
+  }
+
+  function validateBase(value, bound, names) {
+    for (const piece of value.split(",")) {
+      if (piece.includes("-")) {
+        const [a, b] = piece.split("-");
+        if (b === undefined) throw new Error(`Range '${piece}' is missing the upper bound.`);
+        const av = Number(resolveName(a, names)), bv = Number(resolveName(b, names));
+        if (Number.isNaN(av) || Number.isNaN(bv)) throw new Error(`Range '${piece}' must use numbers or names.`);
+        if (av < bound.min || av > bound.max) throw new Error(`${bound.name} ${av} is out of range (${bound.min}–${bound.max}).`);
+        if (bv < bound.min || bv > bound.max) throw new Error(`${bound.name} ${bv} is out of range (${bound.min}–${bound.max}).`);
+        if (av > bv) throw new Error(`Range '${piece}' has a lower bound greater than the upper bound.`);
+      } else {
+        const v = Number(resolveName(piece, names));
+        if (Number.isNaN(v)) throw new Error(`Field value '${piece}' isn't a valid ${bound.name}.`);
+        if (v < bound.min || v > bound.max) throw new Error(`${bound.name} ${v} is out of range (${bound.min}–${bound.max}).`);
+      }
+    }
+  }
+
+  function describeField(value, unitSingular, names) {
+    if (value === "*") return `every ${unitSingular}`;
+    if (value.includes("/")) {
+      const [base, step] = value.split("/");
+      const baseLabel = base === "*" ? "" : ` from ${describeBase(base, names)}`;
+      return `every ${step} ${unitSingular}(s)${baseLabel}`;
+    }
+    return describeBase(value, names);
+  }
+
+  function describeBase(value, names) {
+    if (value.includes(",")) {
+      return value.split(",").map((v) => describeBase(v, names)).join(", ");
+    }
+    if (value.includes("-")) {
+      const [a, b] = value.split("-");
+      const av = resolveName(a, names), bv = resolveName(b, names);
+      return `${names ? names[Number(av)] || av : av} through ${names ? names[Number(bv)] || bv : bv}`;
+    }
+    const v = resolveName(value, names);
+    return names ? names[Number(v)] || v : v;
+  }
+
+  function parse(expr) {
+    const parts = expr.trim().split(/\s+/);
+    if (parts.length !== 5) throw new Error("Expected 5 fields: minute hour day-of-month month day-of-week.");
+    const [min, hour, dom, mon, dow] = parts;
+
+    // Validate every field before describing. Throws on out-of-range values.
+    validateField(min, BOUNDS[0]);
+    validateField(hour, BOUNDS[1]);
+    validateField(dom, BOUNDS[2]);
+    validateField(mon, BOUNDS[3], MONTH_SHORT);
+    validateField(dow, BOUNDS[4], DOW_SHORT);
+
+    // Shortcut: a single minute value at a single hour, every day, every
+    // month, every weekday — render as "Runs every day at HH:MM."
+    // Guard against step/range/list values so "0 */2 * * *" no longer
+    // renders as "every day at */2:00".
+    const minIsLiteral = /^\d+$/.test(min);
+    const hourIsLiteral = /^\d+$/.test(hour);
+    if (minIsLiteral && hourIsLiteral && dom === "*" && mon === "*" && dow === "*") {
+      return `Runs every day at ${hour.padStart(2, "0")}:${min.padStart(2, "0")}.`;
+    }
+
+    const bits = [];
+    bits.push(`minute: ${describeField(min, "minute")}`);
+    bits.push(`hour: ${describeField(hour, "hour")}`);
+    bits.push(`day of month: ${describeField(dom, "day")}`);
+    bits.push(`month: ${describeField(mon, "month", MONTHS)}`);
+    bits.push(`day of week: ${describeField(dow, "day", DOW)}`);
+    return "Runs when — " + bits.join("; ") + ".";
+  }
+
+  function run() {
+    if (!input.value.trim()) { output.textContent = ""; return; }
+    try {
+      output.textContent = parse(input.value);
+      Anvil.setStatus(status, "Parsed.", "ok");
+    } catch (e) {
+      output.textContent = "";
+      Anvil.setStatus(status, e.message, "error");
+    }
+  }
+  input.addEventListener("input", run);
+
+  const examples = [
+    ["0 0 * * *", "Every day at midnight"],
+    ["*/15 * * * *", "Every 15 minutes"],
+    ["0 9 * * 1-5", "9am on weekdays"],
+    ["0 0 1 * *", "Midnight on the 1st of every month"],
+    ["0 */2 * * *", "Every 2 hours, on the hour"],
+  ];
+  const grid = document.getElementById("examples");
+  examples.forEach(([expr, label]) => {
+    const a = document.createElement("a");
+    a.className = "tool-card"; a.href = "#";
+    const name = document.createElement("span"); name.className = "name"; name.textContent = expr;
+    const desc = document.createElement("p"); desc.className = "desc"; desc.textContent = label;
+    a.append(name, desc);
+    a.addEventListener("click", (e) => { e.preventDefault(); input.value = expr; run(); });
+    grid.appendChild(a);
+  });
+})();
+</script>
+{% endblock %}

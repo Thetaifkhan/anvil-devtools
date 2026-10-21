@@ -1,0 +1,74 @@
+{% extends "tools/_tool_base.html" %}
+{% block privacy_note %}<div class="privacy-note">Reference data only — nothing to send anywhere.</div>{% endblock %}
+{% block tool_body %}
+<div class="panel" style="min-height:auto;">
+  <div class="panel-head"><span>Search</span></div>
+  <div style="padding:.9rem;"><input type="text" id="search" placeholder="Search by code or name, e.g. 404 or not found" style="width:100%; background:var(--bg-inset); border:1px solid var(--border); color:var(--text); padding:.6rem; border-radius:var(--radius);"></div>
+</div>
+<div id="results" style="margin-top:1rem; display:flex; flex-direction:column; gap:.6rem;"></div>
+{% endblock %}
+{% block education %}<h2>HTTP status code classes</h2><p>1xx informational, 2xx success, 3xx redirection, 4xx client error, 5xx server error. When debugging an API, the class alone tells you whether to look at your request or the server's behavior.</p>{% endblock %}
+{% block faq %}<h2>FAQ</h2><div class="faq-item"><h3>What's the difference between 401 and 403?</h3><p>401 Unauthorized means you're not authenticated (or your credentials are invalid); 403 Forbidden means you are authenticated but don't have permission for that resource.</p></div>{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const CODES = [
+    [200,"OK","The request succeeded.","Standard successful response for GET/POST/etc."],
+    [201,"Created","The request succeeded and a new resource was created.","Common after a successful POST."],
+    [204,"No Content","The request succeeded but there's no response body.","Common after a successful DELETE."],
+    [301,"Moved Permanently","The resource has a new permanent URL.","Update bookmarks/links to the Location header."],
+    [302,"Found","The resource is temporarily at a different URL.","Common for redirects after form submission."],
+    [304,"Not Modified","The cached version is still valid.","Used with conditional requests (ETag/If-Modified-Since)."],
+    [400,"Bad Request","The server couldn't understand the request due to invalid syntax.","Check your request body/params for malformed data."],
+    [401,"Unauthorized","Authentication is required or has failed.","Check your credentials or auth token."],
+    [403,"Forbidden","The server understood the request but refuses to authorize it.","You're authenticated but lack permission."],
+    [404,"Not Found","The server can't find the requested resource.","Check the URL path and that the resource exists."],
+    [405,"Method Not Allowed","The HTTP method isn't supported for this resource.","Check the API docs for allowed methods."],
+    [408,"Request Timeout","The server timed out waiting for the request.","Often a slow client connection."],
+    [409,"Conflict","The request conflicts with the current state of the resource.","Common on concurrent updates to the same resource."],
+    [410,"Gone","The resource is permanently gone and won't return.","Different from 404 — this is intentional removal."],
+    [418,"I'm a Teapot","An April Fools' joke from RFC 2324.","Not meant to be implemented seriously — but some APIs do."],
+    [422,"Unprocessable Entity","The request was well-formed but semantically invalid.","Common for validation errors in REST APIs."],
+    [429,"Too Many Requests","You've hit a rate limit.","Check the Retry-After header and back off."],
+    [500,"Internal Server Error","A generic server-side failure.","Check server logs — this is not a client-side problem."],
+    [502,"Bad Gateway","An upstream server returned an invalid response.","Often a proxy/load balancer issue."],
+    [503,"Service Unavailable","The server is temporarily unable to handle the request.","Often due to maintenance or overload."],
+    [504,"Gateway Timeout","An upstream server didn't respond in time.","Check the upstream service's health/latency."],
+  ];
+
+  const results = document.getElementById("results"), search = document.getElementById("search");
+  function render(list) {
+    results.textContent = "";
+    list.forEach(([code, name, meaning, trouble]) => {
+      const panel = document.createElement("div");
+      panel.className = "panel";
+      panel.style.minHeight = "auto";
+      const header = document.createElement("div");
+      header.className = "panel-head";
+      const title = document.createElement("span");
+      title.textContent = `${code} ${name}`;
+      header.appendChild(title);
+      const content = document.createElement("div");
+      content.style.padding = ".8rem .9rem";
+      const description = document.createElement("p");
+      description.style.margin = "0 0 .4rem";
+      description.textContent = meaning;
+      const troubleshooting = document.createElement("p");
+      troubleshooting.style.margin = "0";
+      troubleshooting.style.fontSize = ".82rem";
+      troubleshooting.style.color = "var(--text-faint)";
+      troubleshooting.textContent = `Troubleshooting: ${trouble}`;
+      content.append(description, troubleshooting);
+      panel.append(header, content);
+      results.appendChild(panel);
+    });
+  }
+  search.addEventListener("input", () => {
+    const q = search.value.toLowerCase().trim();
+    const filtered = q ? CODES.filter((c) => String(c[0]).includes(q) || c[1].toLowerCase().includes(q)) : CODES;
+    render(filtered);
+  });
+  render(CODES);
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1B1C26" id="meta-theme-color">
+  <title>{% block title %}Anvil — Developer Tools, Forged for Daily Use{% endblock %}</title>
+  <meta name="description" content="{% block description %}Format, validate, convert, decode and compare your data. Fast, private developer tools that run in your browser.{% endblock %}">
+  <link rel="canonical" href="{% block canonical %}{{ config.SITE_URL }}{{ request.path }}{% endblock %}">
+
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="{% block og_title %}Anvil — Developer Tools{% endblock %}">
+  <meta property="og:description" content="{% block og_description %}Format, validate, convert, decode and compare your data. Fast, private, free.{% endblock %}">
+  <meta property="og:url" content="{{ config.SITE_URL }}{{ request.path }}">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="{% block tw_title %}Anvil — Developer Tools{% endblock %}">
+  <meta name="twitter:description" content="{% block tw_description %}Format, validate, convert, decode and compare your data.{% endblock %}">
+
+  {% block structured_data %}{% endblock %}
+
+  <link rel="icon" href="{{ url_for('static', filename='icons/favicon.svg') }}" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+
+  <script>
+    // Applied before paint to avoid a flash of the wrong theme.
+    // Three first-class themes: light, dracula (default dark), night-owl.
+    (function () {
+      try {
+        var t = localStorage.getItem('anvil-theme') || 'dracula';
+      } catch (e) {
+        // localStorage is unavailable (private window, restricted context, etc.)
+        var t = 'dracula';
+      }
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+
+  {% if config.ANALYTICS_PROVIDER == 'plausible' and config.ANALYTICS_ID %}
+  <script defer data-domain="{{ config.ANALYTICS_ID }}" src="https://plausible.io/js/script.js"></script>
+  {% elif config.ANALYTICS_PROVIDER == 'ga4' and config.ANALYTICS_ID %}
+  <script async src="https://www.googletagmanager.com/gtag/js?id={{ config.ANALYTICS_ID }}"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', {{ config.ANALYTICS_ID | tojson }});
+  </script>
+  {% endif %}
+
+  {% if config.ADSENSE_ENABLED %}
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{ config.ADSENSE_CLIENT_ID }}" crossorigin="anonymous"></script>
+  {% endif %}
+
+  {% block head_extra %}{% endblock %}
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <div class="terminal-bg" aria-hidden="true">
+    <canvas id="terminal-canvas"></canvas>
+    <div class="terminal-bg-fade"></div>
+  </div>
+
+  <div class="command-palette" id="command-palette" hidden role="dialog" aria-modal="true" aria-label="Command palette">
+    <div class="command-palette-backdrop" data-palette-close></div>
+    <div class="command-palette-panel">
+      <div class="command-palette-input-row">
+        <span class="command-palette-prompt">❯</span>
+        <input id="command-palette-input" type="text" placeholder="Type a command or search tools…" aria-label="Command palette search" autocomplete="off">
+        <kbd>Esc</kbd>
+      </div>
+      <div id="command-palette-results" class="command-palette-results"></div>
+    </div>
+  </div>
+
+  <header class="site-header">
+    <div class="wrap">
+      <a class="logo" href="/"><span class="spark">⚒</span> Anvil</a>
+      <nav class="main-nav" aria-label="Primary">
+        <a href="/workbench" class="{{ 'active' if request.path == '/workbench' }}">Workbench</a>
+        <a href="/tools" class="{{ 'active' if request.path == '/tools' }}">Tools</a>
+        <a href="/#json-xml">Categories</a>
+      </nav>
+      <div class="header-search">
+        <input id="header-search-input" type="search" placeholder="Search developer tools…" aria-label="Search developer tools" autocomplete="off">
+        <kbd>⌘K</kbd>
+        <div id="header-search-results" class="search-results" data-search-results hidden></div>
+      </div>
+      <a class="btn primary header-cta" href="/workbench" style="text-decoration:none; white-space:nowrap;">Open Workbench</a>
+      <div class="theme-toggle" role="group" aria-label="Theme">
+        <button type="button" data-theme="light" aria-label="Light theme" title="Light">☀</button>
+        <button type="button" data-theme="dracula" aria-label="Dracula theme" title="Dracula">🦇</button>
+        <button type="button" data-theme="night-owl" aria-label="Night Owl theme" title="Night Owl">🌙</button>
+      </div>
+      <button class="nav-toggle" id="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-nav">
+        <span class="bar"></span><span class="bar"></span><span class="bar"></span>
+      </button>
+    </div>
+  </header>
+
+  <nav class="mobile-nav" id="mobile-nav" aria-label="Mobile">
+    <div class="header-search">
+      <input id="mobile-search-input" type="search" placeholder="Search developer tools…" aria-label="Search developer tools" autocomplete="off">
+      <div id="mobile-search-results" class="search-results" data-search-results hidden></div>
+    </div>
+    <div class="nav-links">
+      <a href="/workbench" class="{{ 'active' if request.path == '/workbench' }}">Workbench</a>
+      <a href="/tools" class="{{ 'active' if request.path == '/tools' }}">All tools</a>
+      <a href="/#json-xml">Categories</a>
+    </div>
+    <div class="mobile-nav-row">
+      <span class="label">Theme</span>
+      <div class="theme-toggle" role="group" aria-label="Theme">
+        <button type="button" data-theme="light" aria-label="Light theme" title="Light">☀</button>
+        <button type="button" data-theme="dracula" aria-label="Dracula theme" title="Dracula">🦇</button>
+        <button type="button" data-theme="night-owl" aria-label="Night Owl theme" title="Night Owl">🌙</button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="ad-container leaderboard wrap" {% if not config.ADSENSE_ENABLED %}hidden{% endif %}>
+    <!-- AdSense slot: header leaderboard -->
+    {% if config.ADSENSE_ENABLED %}
+    <ins class="adsbygoogle" style="display:block" data-ad-client="{{ config.ADSENSE_CLIENT_ID }}" data-ad-slot="header" data-ad-format="auto"></ins>
+    <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+    {% endif %}
+  </div>
+
+  <main id="main">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <div class="footer-grid">
+        <div>
+          <div class="logo" style="margin-bottom:.7rem;"><span class="spark">⚒</span> Anvil</div>
+          <p style="max-width:32ch;">Developer tools for everyday work — format, validate, convert, decode and compare, entirely in your browser wherever possible.</p>
+        </div>
+        <div>
+          <h4>Popular</h4>
+          <a href="/json-formatter">JSON Formatter</a>
+          <a href="/jwt-decoder">JWT Decoder</a>
+          <a href="/base64-encode">Base64 Encoder</a>
+          <a href="/uuid-generator">UUID Generator</a>
+        </div>
+        <div>
+          <h4>Explore</h4>
+          <a href="/tools">All tools</a>
+          <a href="/#json-xml">JSON &amp; XML</a>
+          <a href="/#security">Security</a>
+        </div>
+        <div>
+          <h4>Company</h4>
+          <a href="/privacy-policy">Privacy policy</a>
+          <a href="/terms-of-service">Terms of service</a>
+          <a href="/disclaimer">Disclaimer</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>© {{ current_year }} Anvil. Tools run locally in your browser wherever possible — see our <a href="/privacy-policy">privacy policy</a>.</span>
+        <span>Made by Mohd Tayiaf</span>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    window.TOOL_INDEX = {{ tool_index_json | default('[]') | safe }};
+  </script>
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/terminal-bg.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/command-palette.js') }}"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('/service-worker.js').catch(() => {}));
+    }
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,23 @@
+{% extends "tools/_tool_base.html" %}
+{% block privacy_note %}<div class="privacy-note">Conversion runs on the server for reliability; input is never stored.</div>{% endblock %}
+{% block tool_body %}
+<div class="tool-panels">
+  <div class="panel"><div class="panel-head"><span>CSV input</span></div><textarea id="input" placeholder="name,age&#10;John,30&#10;Sarah,28"></textarea></div>
+  <div class="panel"><div class="panel-head"><span>JSON output</span><div class="btn-row"><button class="btn" id="copy-btn">Copy</button><button class="btn" id="download-btn">Download</button></div></div><div class="output-area" id="output"></div><div class="meta-row" id="meta"></div></div>
+</div>
+<div class="btn-row" style="margin:1rem 0;"><button class="btn primary" id="run-btn">Convert ⌘⏎</button></div>
+<div class="status-line neutral" id="status">Delimiter is auto-detected. Paste CSV and press Convert.</div>
+{% endblock %}
+{% block education %}<h2>How it works</h2><p>The first row is treated as the header. The delimiter (comma, semicolon, tab, or pipe) is detected automatically from a sample of your input.</p>{% endblock %}
+{% block faq %}<h2>FAQ</h2><div class="faq-item"><h3>What if my CSV has no header row?</h3><p>This tool assumes the first row is a header. If your data has no headers, add a placeholder row before pasting.</p></div>{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/tools/api_tool.js') }}"></script>
+<script>
+(function () {
+  const input = document.getElementById("input"), output = document.getElementById("output"), status = document.getElementById("status"), meta = document.getElementById("meta");
+  document.getElementById("run-btn").addEventListener("click", () => AnvilApi.run({ endpoint: "/api/csv-to-json", body: { text: input.value }, output, status, meta, successMessage: "Converted to JSON." }));
+  document.getElementById("copy-btn").addEventListener("click", (e) => Anvil.copyText(output.textContent, e.target));
+  document.getElementById("download-btn").addEventListener("click", () => Anvil.download("converted.json", output.textContent, "application/json"));
+})();
+</script>
+{% endblock %}

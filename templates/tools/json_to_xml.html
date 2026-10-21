@@ -1,0 +1,59 @@
+{% extends "tools/_tool_base.html" %}
+{% block privacy_note %}
+<div class="privacy-note">Input is sent to Anvil's server for in-memory conversion. This application does not intentionally store or log tool input; avoid submitting secrets or sensitive data.</div>
+{% endblock %}
+{% block tool_body %}
+<div class="tool-options">
+  <label>Root element <input type="text" id="root-name" value="root"></label>
+  <button class="btn primary" id="run-btn" style="margin-left:auto;">Convert ⌘⏎</button>
+</div>
+<div class="tool-panels">
+  <div class="panel">
+    <div class="panel-head"><span>JSON input</span></div>
+    <textarea id="input" placeholder='{"user":{"name":"John","skills":["Python","JavaScript"]}}'></textarea>
+  </div>
+  <div class="panel">
+    <div class="panel-head">
+      <span>XML output</span>
+      <div class="btn-row">
+        <button class="btn" id="copy-btn">Copy</button>
+        <button class="btn" id="download-btn">Download</button>
+      </div>
+    </div>
+    <div class="output-area" id="output"></div>
+    <div class="meta-row" id="meta"></div>
+  </div>
+</div>
+<div class="status-line neutral" id="status">Paste JSON and press Convert.</div>
+{% endblock %}
+
+{% block education %}
+<h2>How JSON to XML conversion works</h2>
+<p>JSON objects become nested XML elements, arrays become repeated <code>&lt;item&gt;</code> elements, and primitive values become element text content. Keys that aren't valid XML tag names (starting with a digit, containing spaces) are automatically sanitized.</p>
+<h2>Limitations</h2>
+<p>JSON and XML don't share a data model: XML has no native concept of arrays or of a `null` vs. missing distinction, and it separates attributes from element content in ways JSON does not. This converter uses simple, predictable conventions rather than trying to guess your intended schema — for full control over attributes, hand-edit the output afterward.</p>
+{% endblock %}
+
+{% block faq %}
+<h2>FAQ</h2>
+<div class="faq-item"><h3>How are JSON arrays represented in XML?</h3><p>Each array item becomes a sibling <code>&lt;item&gt;</code> element under its parent, since XML has no native array type.</p></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/tools/api_tool.js') }}"></script>
+<script>
+(function () {
+  const input = document.getElementById("input"), output = document.getElementById("output");
+  const status = document.getElementById("status"), meta = document.getElementById("meta");
+  document.getElementById("run-btn").addEventListener("click", () => {
+    AnvilApi.run({
+      endpoint: "/api/json-to-xml",
+      body: { text: input.value, root: document.getElementById("root-name").value },
+      output, status, meta, successMessage: "Converted to XML.",
+    });
+  });
+  document.getElementById("copy-btn").addEventListener("click", (e) => Anvil.copyText(output.textContent, e.target));
+  document.getElementById("download-btn").addEventListener("click", () => Anvil.download("converted.xml", output.textContent, "application/xml"));
+})();
+</script>
+{% endblock %}

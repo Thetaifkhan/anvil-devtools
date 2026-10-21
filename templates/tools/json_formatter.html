@@ -1,0 +1,69 @@
+{% extends "tools/_tool_base.html" %}
+
+{% block tool_body %}
+<div class="tool-options">
+  <label>Indent
+    <select id="indent">
+      <option value="2">2 spaces</option>
+      <option value="4">4 spaces</option>
+      <option value="tab">Tab</option>
+    </select>
+  </label>
+  <label><input type="checkbox" id="sort-keys"> Sort keys</label>
+  <div class="btn-row" style="margin-left:auto;">
+    <button class="btn primary" id="format-btn">Format ⌘⏎</button>
+    <button class="btn" id="minify-btn">Minify</button>
+    <button class="btn" id="clear-btn">Clear</button>
+  </div>
+</div>
+
+<div class="tool-panels">
+  <div class="panel" id="drop-zone">
+    <div class="panel-head"><span>Input</span><span id="input-count"></span></div>
+    <textarea id="input" placeholder='Paste JSON here, e.g. {"name":"John","age":30} — or drag a .json file in'></textarea>
+  </div>
+  <div class="panel">
+    <div class="panel-head">
+      <span>Output</span>
+      <div class="btn-row">
+        <button class="btn" id="copy-btn">Copy</button>
+        <button class="btn" id="download-btn">Download</button>
+      </div>
+    </div>
+    <div class="output-area" id="output" role="status"></div>
+    <div class="meta-row" id="meta-row"></div>
+  </div>
+</div>
+<div class="status-line neutral" id="status">Paste JSON and press Format, or Ctrl/Cmd+Enter.</div>
+{% endblock %}
+
+{% block education %}
+<h2>How to use the JSON Formatter</h2>
+<p>Paste or drag a <code>.json</code> file into the input panel, choose an indent width, then click <strong>Format</strong> to pretty-print it, or <strong>Minify</strong> to collapse it onto one line. Enable <strong>Sort keys</strong> to alphabetize object keys, which is useful when diffing two JSON files that only differ in key order.</p>
+
+<h2>Example</h2>
+<pre>{"name":"John","age":30,"skills":["Python","JavaScript"]}</pre>
+<p>becomes:</p>
+<pre>{
+  "name": "John",
+  "age": 30,
+  "skills": [
+    "Python",
+    "JavaScript"
+  ]
+}</pre>
+
+<h2>Common errors</h2>
+<p>The formatter reports the exact line and column where parsing failed — for example a trailing comma, an unquoted key, or a missing closing brace — instead of a generic "invalid JSON" message.</p>
+{% endblock %}
+
+{% block faq %}
+<h2>FAQ</h2>
+<div class="faq-item"><h3>Does this tool send my JSON to a server?</h3><p>No. Formatting and minifying both run entirely in your browser using <code>JSON.parse</code> and <code>JSON.stringify</code>. Nothing is uploaded.</p></div>
+<div class="faq-item"><h3>Is there a size limit?</h3><p>The tool works well into the tens of megabytes, limited only by your browser's memory. Very large files may take a moment to render.</p></div>
+<div class="faq-item"><h3>Can I format JSON with comments?</h3><p>Standard JSON doesn't support comments. If your input has them (JSONC), remove the comments first or the parser will report an error at that location.</p></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/tools/json_formatter.js') }}"></script>
+{% endblock %}

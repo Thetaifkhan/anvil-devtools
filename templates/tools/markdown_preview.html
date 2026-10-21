@@ -1,0 +1,73 @@
+{% extends "tools/_tool_base.html" %}
+{% block tool_body %}
+<div class="tool-panels">
+  <div class="panel"><div class="panel-head"><span>Markdown</span></div><textarea id="input" placeholder="# Hello&#10;&#10;Some **bold** and _italic_ text with a [link](https://example.com).&#10;&#10;- item one&#10;- item two&#10;&#10;```&#10;code block&#10;```"></textarea></div>
+  <div class="panel"><div class="panel-head"><span>Preview</span><button class="btn" id="copy-html">Copy HTML</button></div><div class="output-area" id="preview" style="white-space:normal;"></div></div>
+</div>
+<div class="status-line neutral" id="status">Preview updates as you type.</div>
+{% endblock %}
+{% block education %}<h2>Supported Markdown</h2><p>Headings, bold/italic, links, inline code and fenced code blocks, unordered/ordered lists, and blockquotes. This is a lightweight client-side renderer intended for quick previews, not a full CommonMark implementation.</p>{% endblock %}
+{% block faq %}<h2>FAQ</h2><div class="faq-item"><h3>Are tables supported?</h3><p>Not in this lightweight renderer. For full GitHub-Flavored Markdown including tables, preview in your target platform (e.g. GitHub) directly.</p></div>{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const input = document.getElementById("input"), preview = document.getElementById("preview"), status = document.getElementById("status");
+
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+  function renderInline(text) {
+    text = escapeHtml(text);
+    text = text.replace(/`([^`]+)`/g, "<code>$1</code>");
+    text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    // Italic with underscore — but only when both underscores sit at word
+    // boundaries so identifiers like `my_var_name` are not split into
+    // `my<em>var</em>name`. We use a negative lookbehind/lookahead for word
+    // characters. (CommonMark requires intraword emphasis to use `*`.)
+    text = text.replace(/(?<![\w])_([^_]+)_(?![\w])/g, "<em>$1</em>");
+    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, linkText, href) => {
+      // Only allow safe URL schemes; block javascript:, data:, vbscript:, etc.
+      const decodedHref = href.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+      const safeHref = /^(https?:|mailto:|#)/i.test(decodedHref) || (decodedHref.startsWith("/") && !decodedHref.startsWith("//") && !decodedHref.startsWith("/\\"));
+      const finalHref = safeHref ? decodedHref : "#";
+      return `<a href="${escapeHtml(finalHref)}" target="_blank" rel="noopener noreferrer">${linkText}</a>`;
+    });
+    return text;
+  }
+
+  function render(md) {
+    const lines = md.split("\n");
+    let html = "", inCode = false, listOpen = null;
+    function closeList() { if (listOpen) { html += `</${listOpen}>`; listOpen = null; } }
+
+    lines.forEach((line) => {
+      if (line.trim().startsWith("```")) { inCode = !inCode; html += inCode ? "<pre><code>" : "</code></pre>"; return; }
+      if (inCode) { html += escapeHtml(line) + "\n"; return; }
+
+      const h = /^(#{1,6})\s+(.*)/.exec(line);
+      if (h) { closeList(); html += `<h${h[1].length}>${renderInline(h[2])}</h${h[1].length}>`; return; }
+
+      if (/^>\s?/.test(line)) { closeList(); html += `<blockquote>${renderInline(line.replace(/^>\s?/, ""))}</blockquote>`; return; }
+
+      const ul = /^[-*]\s+(.*)/.exec(line);
+      const ol = /^\d+\.\s+(.*)/.exec(line);
+      if (ul) { if (listOpen !== "ul") { closeList(); html += "<ul>"; listOpen = "ul"; } html += `<li>${renderInline(ul[1])}</li>`; return; }
+      if (ol) { if (listOpen !== "ol") { closeList(); html += "<ol>"; listOpen = "ol"; } html += `<li>${renderInline(ol[1])}</li>`; return; }
+
+      closeList();
+      if (line.trim() === "") return;
+      html += `<p>${renderInline(line)}</p>`;
+    });
+    closeList();
+    return html;
+  }
+
+  function update() {
+    preview.innerHTML = render(input.value);
+    Anvil.setStatus(status, "Preview updated.", "ok");
+  }
+  input.addEventListener("input", update);
+  document.getElementById("copy-html").addEventListener("click", (e) => Anvil.copyText(preview.innerHTML, e.target));
+  update();
+})();
+</script>
+{% endblock %}

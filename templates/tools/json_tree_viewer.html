@@ -1,0 +1,38 @@
+{% extends "tools/_tool_base.html" %}
+{% block tool_body %}
+<div class="tool-panels">
+  <div class="panel">
+    <div class="panel-head"><span>Input</span></div>
+    <textarea id="input" placeholder='{"user":{"name":"John","skills":["Python","JavaScript"]}}'></textarea>
+  </div>
+  <div class="panel">
+    <div class="panel-head">
+      <span>Tree</span>
+      <div class="btn-row">
+        <button class="btn" id="expand-all">Expand all</button>
+        <button class="btn" id="collapse-all">Collapse all</button>
+      </div>
+    </div>
+    <div class="output-area tree" id="output"></div>
+  </div>
+</div>
+<div class="tool-options">
+  <label>Search keys/values <input type="text" id="search" placeholder="e.g. skills"></label>
+  <button class="btn primary" id="render-btn" style="margin-left:auto;">Render ⌘⏎</button>
+</div>
+<div class="status-line neutral" id="status">Paste JSON and press Render.</div>
+{% endblock %}
+
+{% block education %}
+<h2>How to use the JSON Tree Viewer</h2>
+<p>Paste JSON and click Render to explore it as a collapsible tree. Click any triangle to expand or collapse a node, or use the search box to highlight matching keys and values. Click a value to copy it, or click a key to copy its JSONPath (e.g. <code>$.user.skills[0]</code>).</p>
+{% endblock %}
+
+{% block faq %}
+<h2>FAQ</h2>
+<div class="faq-item"><h3>What is JSONPath?</h3><p>JSONPath is a query syntax for addressing a value inside a JSON document, similar to XPath for XML. Copying a node's path gives you a ready-to-use expression like <code>$.user.address.city</code>.</p></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/tools/json_tree_viewer.js') }}"></script>
+{% endblock %}

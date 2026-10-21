@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Disclaimer — Anvil{% endblock %}
+{% block content %}
+<div class="wrap page-content">
+<h1>Disclaimer</h1>
+<p>Anvil's tools are general-purpose developer utilities intended to speed up everyday tasks. They are not a substitute for domain-specific tooling, security audits, or professional advice.</p>
+
+<h2>Security tools</h2>
+<p>The JWT Decoder does not verify token signatures — it only decodes claims for inspection. The Hash Generator includes MD5 and SHA-1 for compatibility with legacy systems, but both are cryptographically broken and unsuitable for security purposes. Never paste production secrets, private keys, or passwords into any online tool, including this one.</p>
+
+<h2>Regex explanations</h2>
+<p>Any automatically generated regex explanations are heuristic and may not capture every edge case of a complex pattern — verify behavior against real test cases.</p>
+
+<h2>Conversion tools</h2>
+<p>JSON, XML, YAML and CSV have different data models. Conversions between them use reasonable, documented conventions but may not perfectly preserve semantics for every possible input — review converted output before relying on it.</p>
+</div>
+{% endblock %}

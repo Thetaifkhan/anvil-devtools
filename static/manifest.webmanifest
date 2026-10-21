@@ -1,0 +1,13 @@
+{
+  "name": "Anvil — Developer Tools",
+  "short_name": "Anvil",
+  "description": "Format, validate, convert, decode and compare your data. Fast, private developer tools.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#16140F",
+  "theme_color": "#16140F",
+  "icons": [
+    { "src": "/static/icons/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml" },
+    { "src": "/static/icons/icon-512.svg", "sizes": "512x512", "type": "image/svg+xml" }
+  ]
+}

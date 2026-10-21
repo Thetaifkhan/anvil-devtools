@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}{{ tool.name }} Online — Free &amp; Private | Anvil{% endblock %}
+{% block description %}{{ tool.short }} Runs privately, free, no signup.{% endblock %}
+{% block og_title %}{{ tool.name }} — Anvil{% endblock %}
+{% block og_description %}{{ tool.short }}{% endblock %}
+{% block tw_title %}{{ tool.name }} — Anvil{% endblock %}
+{% block tw_description %}{{ tool.short }}{% endblock %}
+
+{% block structured_data %}
+<script type="application/ld+json">
+{{ {"@context": "https://schema.org", "@type": "SoftwareApplication", "name": tool.name, "applicationCategory": "DeveloperApplication", "operatingSystem": "Any", "description": tool.short, "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "url": config.SITE_URL + "/" + tool.slug} | tojson }}
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="wrap">
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="/">Home</a><span class="sep">/</span>
+    <a href="/tools">Tools</a><span class="sep">/</span>
+    <span>{{ tool.name }}</span>
+  </nav>
+
+  <div class="tool-header">
+    <h1>{{ tool.name }}</h1>
+    <p class="desc">{{ tool.short }}</p>
+    {% block privacy_note %}
+      {% if tool.client_only %}
+      <div class="privacy-note">Runs entirely in your browser — nothing you type is sent to Anvil's server.</div>
+      {% else %}
+      <div class="privacy-note">Input is sent to Anvil's server for in-memory processing. This application does not intentionally store or log tool input; avoid submitting secrets or sensitive data.</div>
+      {% endif %}
+    {% endblock %}
+    {% if tool.operation and tool.formats and workbench_supports(tool) %}
+    <a class="workbench-link" href="/workbench?operation={{ tool.operation }}&format={{ tool.formats[0] if tool.operation != 'converter' else tool.formats[0] + '-' + tool.formats[1] }}">Open in Workbench →</a>
+    {% endif %}
+  </div>
+
+  {% block tool_body %}{% endblock %}
+
+  <div class="ad-container wrap" {% if not config.ADSENSE_ENABLED %}hidden{% endif %}>
+    <!-- AdSense slot: between the tool and the educational content below -->
+    {% if config.ADSENSE_ENABLED %}
+    <ins class="adsbygoogle" style="display:block" data-ad-client="{{ config.ADSENSE_CLIENT_ID }}" data-ad-slot="tool-mid" data-ad-format="auto"></ins>
+    <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+    {% endif %}
+  </div>
+
+  <div class="tool-content">
+    {% block education %}{% endblock %}
+
+    {% block faq %}{% endblock %}
+
+    <h2>Related tools</h2>
+    <div class="related-tools">
+      {% for r in related %}
+      <a href="/{{ r.slug }}">{{ r.name }}</a>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,78 @@
+{% extends "tools/_tool_base.html" %}
+{% block privacy_note %}<div class="privacy-note">Validation runs on the server for reliability; input is never stored.</div>{% endblock %}
+{% block tool_body %}
+<div class="tool-panels">
+  <div class="panel">
+    <div class="panel-head"><span>Input</span></div>
+    <textarea id="input" placeholder="&lt;bookstore&gt;&lt;book&gt;&lt;title&gt;Example&lt;/title&gt;&lt;/book&gt;&lt;/bookstore&gt;"></textarea>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><span>Result</span></div>
+    <div class="output-area" id="output"></div>
+  </div>
+</div>
+<div class="btn-row" style="margin:1rem 0;"><button class="btn primary" id="run-btn">Validate ⌘⏎</button></div>
+<div class="status-line neutral" id="status">Paste XML and press Validate.</div>
+{% endblock %}
+
+{% block education %}
+<h2>What this checks</h2>
+<p>The validator confirms your XML is well-formed: every tag is properly closed and nested, attribute values are quoted, and there's exactly one root element. It reports the line and column of the first problem it finds.</p>
+{% endblock %}
+
+{% block faq %}
+<h2>FAQ</h2>
+<div class="faq-item"><h3>What's the difference between "well-formed" and "valid" XML?</h3><p>Well-formed means the syntax is correct. Valid means it also conforms to a schema (DTD/XSD) — this tool checks well-formedness only.</p></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/tools/api_tool.js') }}"></script>
+<script>
+(function () {
+  const input = document.getElementById("input"), output = document.getElementById("output"), status = document.getElementById("status");
+  let _reqId = 0;
+
+  async function validate() {
+    Anvil.setStatus(status, "Validating…", "neutral");
+    const reqId = ++_reqId;
+    try {
+      const res = await fetch("/api/xml-validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: input.value }),
+      });
+      const text = await res.text();
+      let data = null;
+      try { data = JSON.parse(text); } catch (_) { /* not JSON */ }
+      if (reqId !== _reqId) return; // stale response
+      if (!data || !res.ok) {
+        const msg = (data && data.error) || (text && text.slice(0, 200)) || `HTTP ${res.status}`;
+        output.textContent = "";
+        Anvil.setStatus(status, msg, "error");
+        return;
+      }
+      if (data.valid) {
+        output.textContent = "";
+        const ok = document.createElement("span"); ok.style.color = "var(--good)"; ok.textContent = "✓ Well-formed XML";
+        output.appendChild(ok);
+        Anvil.setStatus(status, "Valid.", "ok");
+      } else {
+        const loc = data.line ? ` (line ${data.line}, column ${data.column})` : "";
+        output.textContent = "";
+        const bad = document.createElement("span"); bad.style.color = "var(--bad)"; bad.textContent = "✗ Not well-formed";
+        output.appendChild(bad);
+        output.appendChild(document.createTextNode("\n\n" + (data.message || "") + loc));
+        Anvil.setStatus(status, "Invalid — see details.", "error");
+      }
+    } catch (err) {
+      if (reqId !== _reqId) return;
+      const msg = (err && err.name === "AbortError") ? "The request was cancelled." : "Network error — could not reach the server.";
+      output.textContent = "";
+      Anvil.setStatus(status, msg, "error");
+    }
+  }
+
+  document.getElementById("run-btn").addEventListener("click", validate);
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,72 @@
+{% extends "tools/_tool_base.html" %}
+{% block tool_body %}
+<div class="tool-options">
+  <div class="btn-row" style="margin-left:auto;"><button class="btn primary" id="run-btn">Decode ⌘⏎</button></div>
+</div>
+<div class="tool-panels">
+  <div class="panel"><div class="panel-head"><span>Base64 input</span></div><textarea id="input" placeholder="SGVsbG8sIHdvcmxkIQ=="></textarea></div>
+  <div class="panel"><div class="panel-head"><span>Decoded text</span><div class="btn-row"><button class="btn" id="copy-btn">Copy</button><button class="btn" id="download-btn">Download</button></div></div><div class="output-area" id="output"></div></div>
+</div>
+<div class="status-line neutral" id="status">Paste Base64 and press Decode.</div>
+{% endblock %}
+{% block education %}<h2>How this works</h2><p>Handles both standard and URL-safe Base64 automatically, and tolerates missing padding <code>=</code> characters. If the decoded bytes aren't valid UTF-8 text, a download link is offered instead of garbled text.</p>{% endblock %}
+{% block faq %}<h2>FAQ</h2><div class="faq-item"><h3>Why do I get an error decoding?</h3><p>The most common cause is input that isn't actually Base64 — for example accidentally pasting a JWT (three dot-separated segments) instead of a single Base64 string.</p></div>{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const input = document.getElementById("input"), output = document.getElementById("output"), status = document.getElementById("status");
+  // Hidden download-as-binary anchor shown only when the decoded bytes
+  // aren't valid UTF-8. The education text promises this fallback exists.
+  let binLink = null;
+
+  function normalize(s) {
+    let t = s.trim().replace(/-/g, "+").replace(/_/g, "/");
+    while (t.length % 4) t += "=";
+    return t;
+  }
+
+  function ensureBinLink() {
+    if (binLink) return binLink;
+    binLink = document.createElement("a");
+    binLink.className = "btn";
+    binLink.textContent = "Download binary";
+    binLink.style.marginTop = ".5rem";
+    binLink.style.display = "inline-block";
+    output.parentNode.insertBefore(binLink, output.nextSibling);
+    return binLink;
+  }
+
+  function hideBinLink() { if (binLink) binLink.remove(); binLink = null; }
+
+  document.getElementById("run-btn").addEventListener("click", () => {
+    if (!input.value.trim()) { Anvil.setStatus(status, "Enter Base64 first.", "neutral"); output.textContent = ""; hideBinLink(); return; }
+    try {
+      const binary = atob(normalize(input.value));
+      const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+      try {
+        output.textContent = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+        Anvil.setStatus(status, "Decoded.", "ok");
+        hideBinLink();
+      } catch (_) {
+        // Bytes aren't valid UTF-8. Offer the download the education text promises.
+        output.textContent = `Decoded ${bytes.length} bytes that aren't valid UTF-8 text. Use the download link below to save them.`;
+        const blob = new Blob([bytes], { type: "application/octet-stream" });
+        const url = URL.createObjectURL(blob);
+        const link = ensureBinLink();
+        link.href = url;
+        link.download = "decoded.bin";
+        // Release the object URL on the next tick after click.
+        link.addEventListener("click", () => setTimeout(() => URL.revokeObjectURL(url), 1000), { once: true });
+        Anvil.setStatus(status, "Decoded bytes are binary — download link ready.", "ok");
+      }
+    } catch (e) {
+      Anvil.setStatus(status, "Invalid Base64, or the decoded bytes aren't valid UTF-8 text.", "error");
+      output.textContent = "";
+      hideBinLink();
+    }
+  });
+  document.getElementById("copy-btn").addEventListener("click", (e) => Anvil.copyText(output.textContent, e.target));
+  document.getElementById("download-btn").addEventListener("click", () => Anvil.download("decoded.txt", output.textContent));
+})();
+</script>
+{% endblock %}

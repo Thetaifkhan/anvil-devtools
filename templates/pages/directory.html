@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}All Developer Tools — Anvil{% endblock %}
+{% block description %}Browse the full directory of Anvil's developer tools, organized by category.{% endblock %}
+{% block content %}
+<div class="wrap directory">
+  <div class="directory-head">
+    <div>
+      <h1>All tools</h1>
+      <p>Browse every Anvil tool by category, or search by name, format or keyword.</p>
+    </div>
+  </div>
+  <div class="directory-search">
+    <input id="directory-search-input" type="search" placeholder="Search all tools…" aria-label="Search all tools" autocomplete="off">
+  </div>
+  <div class="category-nav">
+    {% for c in categories %}<a href="#{{ c | lower | replace(' & ', '-') | replace(' ', '-') }}">{{ c }}</a>{% endfor %}
+  </div>
+  <div id="directory-empty" class="empty-state" hidden>No tools match that search.</div>
+  {% for c in categories %}
+  {% if grouped[c] %}
+  <section data-directory-section>
+    <h2 id="{{ c | lower | replace(' & ', '-') | replace(' ', '-') }}">{{ c }}</h2>
+    <div class="tool-grid">
+      {% for tool in grouped[c] %}
+      <a class="tool-card" href="/{{ tool.slug }}" data-tool-card
+         data-search="{{ (tool.name ~ ' ' ~ tool.short ~ ' ' ~ c ~ ' ' ~ (tool.keywords | join(' '))) | lower }}">
+        <span class="name">{{ tool.name }}</span>
+        <p class="desc">{{ tool.short }}</p>
+        <div class="card-meta">
+          <span class="badge info">{{ tool.operation | capitalize }}</span>
+          {% if tool.formats %}<span class="badge muted">{{ tool.formats[0] | upper }}</span>{% endif %}
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const input = document.getElementById("directory-search-input");
+  const cards = document.querySelectorAll("[data-tool-card]");
+  const sections = document.querySelectorAll("[data-directory-section]");
+  const empty = document.getElementById("directory-empty");
+  input.addEventListener("input", () => {
+    const q = input.value.trim().toLowerCase();
+    let anyVisible = false;
+    sections.forEach((section) => {
+      let sectionHasMatch = false;
+      section.querySelectorAll("[data-tool-card]").forEach((card) => {
+        const match = !q || card.dataset.search.includes(q);
+        card.style.display = match ? "" : "none";
+        if (match) sectionHasMatch = true;
+      });
+      section.style.display = sectionHasMatch ? "" : "none";
+      if (sectionHasMatch) anyVisible = true;
+    });
+    empty.hidden = anyVisible || !q;
+  });
+})();
+</script>
+{% endblock %}

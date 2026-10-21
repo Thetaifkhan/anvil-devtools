@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Workbench — Anvil Developer Tools{% endblock %}
+{% block description %}One workspace for formatting, validating, converting, encoding, decoding, diffing and generating — pick an operation and go.{% endblock %}
+
+{% block content %}
+<div class="wrap workbench-shell">
+  <div class="workbench-title">
+    <div>
+      <h1>Workbench</h1>
+      <p>One workspace for every operation. Pick an operation and format below, then run.</p>
+    </div>
+  </div>
+
+  <div class="workbench-bar">
+    <div class="workbench-field">
+      <label for="op-select">Operation</label>
+      <select id="op-select"></select>
+    </div>
+    <div class="workbench-field">
+      <label for="format-select">Format</label>
+      <select id="format-select"></select>
+    </div>
+    <div class="workbench-field">
+      <label for="action-select">Action</label>
+      <select id="action-select"></select>
+    </div>
+    <div class="run-col">
+      <button class="btn primary" id="run-btn">Run <span class="kbd-hint">⌘⏎</span></button>
+    </div>
+  </div>
+
+  <div class="workbench-options" id="wb-options"></div>
+
+  <div id="wb-unsupported" class="workbench-unsupported" hidden>
+    <strong>Not available yet</strong>
+    <span id="wb-unsupported-text"></span>
+  </div>
+
+  <div id="wb-body"></div>
+
+  <div class="status-line neutral" id="wb-status">Choose an operation and press Run, or <span class="kbd-hint">⌘/Ctrl+Enter</span>.</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>window.CAPABILITY_INDEX = {{ capability_json | safe }};</script>
+<script src="{{ url_for('static', filename='js/md5.js') }}"></script>
+<script src="{{ url_for('static', filename='js/tools/api_tool.js') }}"></script>
+<script src="{{ url_for('static', filename='js/workbench.js') }}"></script>
+{% endblock %}

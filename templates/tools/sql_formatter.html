@@ -1,0 +1,43 @@
+{% extends "tools/_tool_base.html" %}
+{% block privacy_note %}<div class="privacy-note">Formatting runs on the server for reliability; input is never stored or logged.</div>{% endblock %}
+{% block tool_body %}
+<div class="tool-options">
+  <label>Keyword case
+    <select id="keyword-case"><option value="upper">UPPER</option><option value="lower">lower</option><option value="capitalize">Capitalize</option></select>
+  </label>
+  <label>Indent <select id="indent-width"><option value="2">2</option><option value="4">4</option></select></label>
+  <div class="btn-row" style="margin-left:auto;">
+    <button class="btn primary" id="format-btn">Format ⌘⏎</button>
+    <button class="btn" id="minify-btn">Minify</button>
+  </div>
+</div>
+<div class="tool-panels">
+  <div class="panel"><div class="panel-head"><span>Input</span></div><textarea id="input" placeholder="select id,name from users where active=1 order by name"></textarea></div>
+  <div class="panel"><div class="panel-head"><span>Output</span><div class="btn-row"><button class="btn" id="copy-btn">Copy</button><button class="btn" id="download-btn">Download</button></div></div><div class="output-area" id="output"></div></div>
+</div>
+<div class="status-line neutral" id="status">Paste a SQL query and press Format.</div>
+{% endblock %}
+{% block education %}
+<h2>How this SQL formatter works</h2>
+<p>This tool uses a real tokenizing SQL parser (not regex string manipulation) to reindent queries and normalize keyword casing. It does not fully validate every vendor-specific SQL dialect — for dialect-specific syntax checking, use your database's own linter.</p>
+{% endblock %}
+{% block faq %}<h2>FAQ</h2><div class="faq-item"><h3>Does this support every SQL dialect?</h3><p>Formatting works well across standard ANSI SQL and most vendor dialects (PostgreSQL, MySQL, SQL Server), but highly dialect-specific syntax may not reformat perfectly.</p></div>{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/tools/api_tool.js') }}"></script>
+<script>
+(function () {
+  const input = document.getElementById("input"), output = document.getElementById("output"), status = document.getElementById("status");
+  function run(action) {
+    AnvilApi.run({
+      endpoint: "/api/sql-format",
+      body: { text: input.value, action, keyword_case: document.getElementById("keyword-case").value, indent_width: Number(document.getElementById("indent-width").value) },
+      output, status, successMessage: action === "minify" ? "Minified." : "Formatted.",
+    });
+  }
+  document.getElementById("format-btn").addEventListener("click", () => run("format"));
+  document.getElementById("minify-btn").addEventListener("click", () => run("minify"));
+  document.getElementById("copy-btn").addEventListener("click", (e) => Anvil.copyText(output.textContent, e.target));
+  document.getElementById("download-btn").addEventListener("click", () => Anvil.download("formatted.sql", output.textContent, "text/plain"));
+})();
+</script>
+{% endblock %}

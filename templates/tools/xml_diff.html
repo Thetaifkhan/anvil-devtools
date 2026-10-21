@@ -1,0 +1,158 @@
+{% extends "tools/_tool_base.html" %}
+{% block tool_body %}
+<div class="tool-panels">
+  <div class="panel"><div class="panel-head"><span>Original (A)</span></div><textarea id="input-a" placeholder="&lt;root&gt;&#10;  &lt;item&gt;1&lt;/item&gt;&#10;&lt;/root&gt;"></textarea></div>
+  <div class="panel"><div class="panel-head"><span>Changed (B)</span></div><textarea id="input-b" placeholder="&lt;root&gt;&#10;  &lt;item&gt;2&lt;/item&gt;&#10;&lt;/root&gt;"></textarea></div>
+</div>
+<div class="tool-options">
+  <label><input type="checkbox" id="ignore-ws"> Ignore whitespace differences</label>
+  <div class="btn-row" style="margin-left:auto;"><button class="btn primary" id="run-btn">Compare ⌘⏎</button><button class="btn" id="copy-btn" disabled>Copy diff</button><button class="btn" id="download-btn" disabled>Download</button></div>
+</div>
+<div class="panel"><div class="panel-head"><span>Diff</span></div><div class="output-area" id="output"></div></div>
+<div class="status-line neutral" id="status">Paste two XML documents and press Compare.</div>
+{% endblock %}
+{% block education %}<h2>How XML diff works</h2><p>This tool compares two XML documents structurally, showing added, removed, and modified elements and attributes. It handles namespaces, attributes, and text content while optionally ignoring whitespace differences.</p>{% endblock %}
+{% block faq %}<h2>FAQ</h2><div class="faq-item"><h3>Does it handle namespaces?</h3><p>Yes, namespace URIs are compared. Prefix changes are shown as structural differences (which is technically correct XML semantics).</p></div><div class="faq-item"><h3>What about text content?</h3><p>Text nodes are compared character-by-character. Leading/trailing whitespace can be ignored with the whitespace checkbox.</p></div>{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const a = document.getElementById("input-a");
+  const b = document.getElementById("input-b");
+  const output = document.getElementById("output");
+  const status = document.getElementById("status");
+  const copyBtn = document.getElementById("copy-btn");
+  const downloadBtn = document.getElementById("download-btn");
+  let lastDiff = null;
+
+  function parseXML(text) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(text, "application/xml");
+    if (doc.documentElement.tagName === "parsererror") {
+      throw new Error("Invalid XML: " + doc.documentElement.textContent);
+    }
+    return doc.documentElement;
+  }
+
+  function normalizeElement(elem, ignoreWs) {
+    const normalized = {
+      tag: elem.tagName,
+      ns: elem.namespaceURI,
+      attrs: {},
+      text: ignoreWs ? elem.textContent.trim() : elem.textContent,
+      children: []
+    };
+
+    // Collect attributes
+    for (let attr of elem.attributes || []) {
+      normalized.attrs[`{${attr.namespaceURI}}${attr.localName}`] = attr.value;
+    }
+
+    // Recursively normalize child elements (skip text nodes)
+    for (let child of elem.children || []) {
+      normalized.children.push(normalizeElement(child, ignoreWs));
+    }
+
+    return normalized;
+  }
+
+  function compareElements(path, elemA, elemB, results) {
+    // Compare tags and namespaces
+    if (elemA.tag !== elemB.tag || elemA.ns !== elemB.ns) {
+      results.push({ type: "changed", path: path, message: `Element changed from <${elemA.tag}> to <${elemB.tag}>` });
+      return;
+    }
+
+    // Compare text content
+    if (elemA.text !== elemB.text) {
+      results.push({ type: "changed", path: path, message: `Text changed from "${elemA.text}" to "${elemB.text}"` });
+    }
+
+    // Compare attributes
+    const allAttrs = new Set([...Object.keys(elemA.attrs), ...Object.keys(elemB.attrs)]);
+    allAttrs.forEach((attr) => {
+      if (!(attr in elemA.attrs)) {
+        results.push({ type: "added", path: `${path}/@${attr}`, message: `Attribute added: ${elemB.attrs[attr]}` });
+      } else if (!(attr in elemB.attrs)) {
+        results.push({ type: "removed", path: `${path}/@${attr}`, message: `Attribute removed: ${elemA.attrs[attr]}` });
+      } else if (elemA.attrs[attr] !== elemB.attrs[attr]) {
+        results.push({ type: "changed", path: `${path}/@${attr}`, message: `Attribute changed from "${elemA.attrs[attr]}" to "${elemB.attrs[attr]}"` });
+      }
+    });
+
+    // Compare children
+    const maxLen = Math.max(elemA.children.length, elemB.children.length);
+    for (let i = 0; i < maxLen; i++) {
+      if (i >= elemA.children.length) {
+        results.push({ type: "added", path: `${path}/<${elemB.children[i].tag}>`, message: `Element added` });
+      } else if (i >= elemB.children.length) {
+        results.push({ type: "removed", path: `${path}/<${elemA.children[i].tag}>`, message: `Element removed` });
+      } else {
+        const childPath = `${path}/<${elemA.children[i].tag}>[${i}]`;
+        compareElements(childPath, elemA.children[i], elemB.children[i], results);
+      }
+    }
+  }
+
+  function diffToString(results) {
+    return results.map((r) => {
+      if (r.type === "added") return `+ ${r.path}: ${r.message}`;
+      if (r.type === "removed") return `- ${r.path}: ${r.message}`;
+      return `~ ${r.path}: ${r.message}`;
+    }).join("\n");
+  }
+
+  document.getElementById("run-btn").addEventListener("click", () => {
+    try {
+      const elemA = parseXML(a.value);
+      const elemB = parseXML(b.value);
+
+      const ignoreWs = document.getElementById("ignore-ws").checked;
+      const normA = normalizeElement(elemA, ignoreWs);
+      const normB = normalizeElement(elemB, ignoreWs);
+
+      const results = [];
+      compareElements(`/${normA.tag}`, normA, normB, results);
+
+      // Render results
+      output.innerHTML = "";
+      if (results.length === 0) {
+        const span = document.createElement("span");
+        span.style.color = "var(--good)";
+        span.textContent = "No differences — documents are structurally identical.";
+        output.appendChild(span);
+      } else {
+        results.forEach((r) => {
+          const div = document.createElement("div");
+          div.className = r.type === "added" ? "diff-add" : r.type === "removed" ? "diff-del" : "diff-mod";
+          div.textContent = (r.type === "added" ? "+ " : r.type === "removed" ? "- " : "~ ") + r.path + ": " + r.message;
+          output.appendChild(div);
+        });
+      }
+
+      lastDiff = results;
+      copyBtn.disabled = false;
+      downloadBtn.disabled = false;
+      Anvil.setStatus(status, results.length ? `${results.length} difference(s) found.` : "No differences.", results.length ? "error" : "ok");
+    } catch (e) {
+      output.innerHTML = "";
+      Anvil.setStatus(status, "Error: " + e.message, "error");
+      lastDiff = null;
+      copyBtn.disabled = true;
+      downloadBtn.disabled = true;
+    }
+  });
+
+  copyBtn.addEventListener("click", (e) => {
+    if (lastDiff) {
+      Anvil.copyText(diffToString(lastDiff), e.target);
+    }
+  });
+
+  downloadBtn.addEventListener("click", () => {
+    if (lastDiff) {
+      Anvil.download("xml-diff.txt", diffToString(lastDiff), "text/plain");
+    }
+  });
+})();
+</script>
+{% endblock %}

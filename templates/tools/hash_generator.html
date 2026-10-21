@@ -1,0 +1,136 @@
+{% extends "tools/_tool_base.html" %}
+{% block tool_body %}
+<div class="panel"><div class="panel-head"><span>Text</span></div><textarea id="input" style="min-height:120px;" placeholder="Enter text to hash…"></textarea></div>
+<div class="btn-row" style="margin:1rem 0;"><button class="btn primary" id="run-btn">Generate hashes ⌘⏎</button></div>
+<div id="results" style="display:flex; flex-direction:column; gap:.6rem;"></div>
+<div class="status-line neutral" id="status">Enter text and press Generate.</div>
+{% endblock %}
+{% block education %}
+<h2>Which hash should I use?</h2>
+<p>SHA-256 is the standard general-purpose choice today. <span class="badge weak">MD5</span> and <span class="badge weak">SHA-1</span> are included because legacy systems still require them for checksums, but both are cryptographically broken and unsuitable for security purposes such as password storage or signatures.</p>
+{% endblock %}
+{% block faq %}<h2>FAQ</h2><div class="faq-item"><h3>Should I use this to hash passwords?</h3><p>No. Password storage requires a dedicated slow hash like bcrypt, scrypt, or Argon2 with per-user salting — general-purpose hashes like SHA-256 are too fast and unsalted, making them unsuitable for that job.</p></div>{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/md5.js') }}"></script>
+<script>
+(function () {
+  const input = document.getElementById("input"), status = document.getElementById("status"), results = document.getElementById("results");
+  const runBtn = document.getElementById("run-btn");
+
+  const ALGOS = [
+    { id: "MD5", webCryptoName: null, weak: true },
+    { id: "SHA-1", webCryptoName: "SHA-1", weak: true },
+    { id: "SHA-256", webCryptoName: "SHA-256", weak: false },
+    { id: "SHA-384", webCryptoName: "SHA-384", weak: false },
+    { id: "SHA-512", webCryptoName: "SHA-512", weak: false },
+  ];
+
+  // Check Web Crypto availability
+  const hasCrypto = !!(window.crypto && window.crypto.subtle && typeof window.crypto.subtle.digest === "function");
+  if (!hasCrypto) {
+    Anvil.setStatus(status, "Error: Web Crypto API not available in this browser.", "error");
+    runBtn.disabled = true;
+  }
+
+  async function subtleHash(algoName, bytes) {
+    try {
+      const buf = await crypto.subtle.digest(algoName, bytes);
+      return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+    } catch (err) {
+      throw new Error(`${algoName} is not supported: ${err.message}`);
+    }
+  }
+
+  runBtn.addEventListener("click", async () => {
+    if (!input.value) {
+      Anvil.setStatus(status, "Enter some text first.", "neutral");
+      results.innerHTML = "";
+      return;
+    }
+
+    // Clear previous results and disable button during operation
+    results.innerHTML = "";
+    runBtn.disabled = true;
+    Anvil.setStatus(status, "Generating…", "neutral");
+
+    const textValue = input.value;
+    const bytes = new TextEncoder().encode(textValue);
+
+    try {
+      for (const { id, webCryptoName, weak } of ALGOS) {
+        let hash;
+        try {
+          if (id === "MD5") {
+            hash = md5(textValue);
+          } else if (webCryptoName) {
+            hash = await subtleHash(webCryptoName, bytes);
+          } else {
+            // This shouldn't happen with the current ALGOS list, but be defensive
+            throw new Error(`Unsupported algorithm: ${id}`);
+          }
+        } catch (err) {
+          // Algorithm-specific failure; render error for this algorithm only
+          hash = null;
+          const row = document.createElement("div");
+          row.className = "panel";
+          row.style.minHeight = "auto";
+          const head = document.createElement("div");
+          head.className = "panel-head";
+          const label = document.createElement("span");
+          label.textContent = id;
+          if (weak) {
+            const badge = document.createElement("span");
+            badge.className = "badge weak";
+            badge.textContent = " weak";
+            label.appendChild(badge);
+          }
+          head.appendChild(label);
+          const hashOut = document.createElement("div");
+          hashOut.className = "output-area";
+          hashOut.style.cssText = "min-height:auto;padding:.7rem .9rem;color:var(--bad);";
+          hashOut.textContent = `Error: ${err.message}`;
+          row.appendChild(head);
+          row.appendChild(hashOut);
+          results.appendChild(row);
+          continue;
+        }
+
+        // Render successful hash
+        const row = document.createElement("div");
+        row.className = "panel";
+        row.style.minHeight = "auto";
+        const head = document.createElement("div");
+        head.className = "panel-head";
+        const label = document.createElement("span");
+        label.textContent = id;
+        if (weak) {
+          const badge = document.createElement("span");
+          badge.className = "badge weak";
+          badge.textContent = " weak";
+          label.appendChild(badge);
+        }
+        const copyBtn = document.createElement("button");
+        copyBtn.className = "btn copy";
+        copyBtn.textContent = "Copy";
+        head.appendChild(label);
+        head.appendChild(copyBtn);
+        const hashOut = document.createElement("div");
+        hashOut.className = "output-area";
+        hashOut.style.cssText = "min-height:auto;padding:.7rem .9rem;";
+        hashOut.textContent = hash;
+        row.appendChild(head);
+        row.appendChild(hashOut);
+        copyBtn.addEventListener("click", (e) => Anvil.copyText(hash, e.target));
+        results.appendChild(row);
+      }
+      Anvil.setStatus(status, "Generated.", "ok");
+    } catch (err) {
+      // Unexpected error outside the algorithm loop
+      Anvil.setStatus(status, `Error: ${err.message}`, "error");
+    } finally {
+      runBtn.disabled = false;
+    }
+  });
+})();
+</script>
+{% endblock %}

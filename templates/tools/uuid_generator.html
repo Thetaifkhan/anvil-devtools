@@ -1,0 +1,83 @@
+{% extends "tools/_tool_base.html" %}
+{% block tool_body %}
+<div class="tool-options">
+  <label>Version <select id="version"><option value="v4">v4 (random)</option><option value="v1">v1 (time-based, simulated)</option></select></label>
+  <label>Count <input type="number" id="count" value="1" min="1" max="1000" style="width:5rem;"></label>
+  <label><input type="checkbox" id="uppercase"> Uppercase</label>
+  <label><input type="checkbox" id="no-hyphens"> No hyphens</label>
+  <div class="btn-row" style="margin-left:auto;"><button class="btn primary" id="run-btn">Generate ⌘⏎</button></div>
+</div>
+<div class="panel"><div class="panel-head"><span>Output</span><div class="btn-row"><button class="btn" id="copy-btn">Copy all</button><button class="btn" id="download-btn">Download</button></div></div><div class="output-area" id="output"></div></div>
+<div class="status-line neutral" id="status">Choose options and press Generate.</div>
+{% endblock %}
+{% block education %}<h2>UUID v4 vs v1</h2><p>v4 UUIDs are generated from random bits and are the most common choice today. v1 UUIDs encode a timestamp and a node identifier; since browsers don't expose a real MAC address, this generator simulates the node portion with random bits, which is standard practice for client-side v1 generation.</p>{% endblock %}
+{% block faq %}<h2>FAQ</h2><div class="faq-item"><h3>Are these UUIDs cryptographically secure?</h3><p>v4 UUIDs here are generated with <code>crypto.getRandomValues</code>, the browser's cryptographically secure random source.</p></div>{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const output = document.getElementById("output"), status = document.getElementById("status");
+  const runBtn = document.getElementById("run-btn");
+
+  // Feature detection: check for crypto.getRandomValues
+  const hasCrypto = !!(window.crypto && typeof window.crypto.getRandomValues === "function");
+
+  function getRandomBytes(count) {
+    if (!hasCrypto) throw new Error("Secure random generation is unavailable. Open this page in a modern browser over HTTPS or localhost.");
+    return crypto.getRandomValues(new Uint8Array(count));
+  }
+
+  function uuidv4() {
+    const b = getRandomBytes(16);
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    const hex = Array.from(b).map((x) => x.toString(16).padStart(2, "0"));
+    return `${hex.slice(0,4).join("")}-${hex.slice(4,6).join("")}-${hex.slice(6,8).join("")}-${hex.slice(8,10).join("")}-${hex.slice(10,16).join("")}`;
+  }
+  function uuidv1() {
+    // UUID v1 timestamps are 100-ns intervals since 1582-10-15.
+    const gregorianOffset = 0x01B21DD213814000n;
+    const timestamp = BigInt(Date.now()) * 10000n + gregorianOffset;
+    const timeLow = Number(timestamp & 0xffffffffn) >>> 0;
+    const timeMid = Number((timestamp >> 32n) & 0xffffn);
+    const timeHiAndVersion = Number((timestamp >> 48n) & 0x0fffn) | 0x1000;
+    const rand = getRandomBytes(8);
+    const clockSeq = (((rand[0] & 0x3f) << 8) | rand[1]) & 0x3fff;
+    const node = rand.slice(2, 8);
+    node[0] |= 0x01; // multicast bit marks this as a random, not hardware, node id
+    const nodeHex = Array.from(node).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    return `${timeLow.toString(16).padStart(8, "0")}-${timeMid.toString(16).padStart(4, "0")}-${timeHiAndVersion.toString(16).padStart(4, "0")}-${((clockSeq >> 8) | 0x80).toString(16).padStart(2, "0")}${(clockSeq & 0xff).toString(16).padStart(2, "0")}-${nodeHex}`;
+  }
+
+  document.getElementById("run-btn").addEventListener("click", () => {
+    const n = Math.min(1000, Math.max(1, Number(document.getElementById("count").value) || 1));
+    const version = document.getElementById("version").value;
+    if (!hasCrypto) {
+      Anvil.setStatus(status, "Secure random generation is unavailable. UUID generation has been disabled to avoid an insecure result.", "error");
+      return;
+    }
+    try {
+      let list = Array.from({ length: n }, () => (version === "v1" ? uuidv1() : uuidv4()));
+      if (document.getElementById("no-hyphens").checked) list = list.map((u) => u.replace(/-/g, ""));
+      if (document.getElementById("uppercase").checked) list = list.map((u) => u.toUpperCase());
+      output.textContent = list.join("\n");
+      Anvil.setStatus(status, `Generated ${n} UUID${n > 1 ? "s" : ""} using cryptographically secure randomness.`, "ok");
+    } catch (e) {
+      Anvil.setStatus(status, `Error: ${e.message}`, "error");
+    }
+  });
+  document.getElementById("copy-btn").addEventListener("click", (e) => Anvil.copyText(output.textContent, e.target));
+  document.getElementById("download-btn").addEventListener("click", () => Anvil.download("uuids.txt", output.textContent));
+
+  // Refuse to generate v4 IDs using a non-cryptographic fallback.
+  if (!hasCrypto) {
+    runBtn.disabled = true;
+    runBtn.setAttribute("aria-disabled", "true");
+    const note = document.createElement("div");
+    note.className = "status-line error";
+    note.setAttribute("role", "status");
+    note.textContent = "Secure random generation is unavailable. UUID generation is disabled; use a modern browser over HTTPS or localhost.";
+    runBtn.closest(".tool-options").insertAdjacentElement("afterend", note);
+  }
+})();
+</script>
+{% endblock %}

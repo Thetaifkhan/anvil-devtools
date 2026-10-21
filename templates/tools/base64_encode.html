@@ -1,0 +1,45 @@
+{% extends "tools/_tool_base.html" %}
+{% block tool_body %}
+<div class="tool-options">
+  <label><input type="checkbox" id="url-safe"> URL-safe alphabet</label>
+  <div class="btn-row" style="margin-left:auto;"><button class="btn primary" id="run-btn">Encode ⌘⏎</button></div>
+</div>
+<div class="tool-panels">
+  <div class="panel" id="drop-zone"><div class="panel-head"><span>Text or file</span></div><textarea id="input" placeholder="Paste text, or drag a file in to encode it…"></textarea></div>
+  <div class="panel"><div class="panel-head"><span>Base64 output</span><div class="btn-row"><button class="btn" id="copy-btn">Copy</button><button class="btn" id="download-btn">Download</button></div></div><div class="output-area" id="output"></div></div>
+</div>
+<div class="status-line neutral" id="status">Enter text and press Encode, or drag a file into the input panel.</div>
+{% endblock %}
+{% block education %}<h2>What is Base64 encoding?</h2><p>Base64 represents binary data using 64 printable ASCII characters, which makes it safe to embed in text formats like JSON, XML, or URLs (with the URL-safe variant). It is an encoding, not encryption — anyone can decode it.</p>{% endblock %}
+{% block faq %}<h2>FAQ</h2><div class="faq-item"><h3>What's the URL-safe variant?</h3><p>It replaces <code>+</code> and <code>/</code> with <code>-</code> and <code>_</code> so the output can be used directly in URLs and filenames without additional escaping.</p></div>{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const input = document.getElementById("input"), output = document.getElementById("output"), status = document.getElementById("status");
+  function toBase64(bytes) {
+    let binary = "";
+    bytes.forEach((b) => (binary += String.fromCharCode(b)));
+    let b64 = btoa(binary);
+    if (document.getElementById("url-safe").checked) b64 = b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    return b64;
+  }
+  function encode() {
+    if (!input.value) { Anvil.setStatus(status, "Enter text first.", "neutral"); output.textContent = ""; return; }
+    const bytes = new TextEncoder().encode(input.value);
+    output.textContent = toBase64(bytes);
+    Anvil.setStatus(status, "Encoded.", "ok");
+  }
+  document.getElementById("run-btn").addEventListener("click", encode);
+  document.getElementById("copy-btn").addEventListener("click", (e) => Anvil.copyText(output.textContent, e.target));
+  document.getElementById("download-btn").addEventListener("click", () => Anvil.download("encoded.b64.txt", output.textContent));
+  const dz = document.getElementById("drop-zone");
+  ["dragover", "drop"].forEach((evt) => dz.addEventListener(evt, (e) => e.preventDefault()));
+  dz.addEventListener("drop", (e) => {
+    const file = e.dataTransfer.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { output.textContent = toBase64(new Uint8Array(reader.result)); Anvil.setStatus(status, `Encoded ${file.name} (${Anvil.formatBytes(file.size)}).`, "ok"); };
+    reader.readAsArrayBuffer(file);
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,71 @@
+{% extends "tools/_tool_base.html" %}
+{% block privacy_note %}<div class="privacy-note">JSON and Markdown run entirely in your browser. XML, YAML and SQL are sent to the server to format and are never stored.</div>{% endblock %}
+
+{% block tool_body %}
+<div class="format-select">
+  <span class="label">Format</span>
+  <div class="format-tabs" role="tablist" aria-label="Choose a format">
+    <button type="button" data-format="json" class="active" role="tab" aria-selected="true">JSON</button>
+    <button type="button" data-format="xml" role="tab" aria-selected="false">XML</button>
+    <button type="button" data-format="yaml" role="tab" aria-selected="false">YAML</button>
+    <button type="button" data-format="sql" role="tab" aria-selected="false">SQL</button>
+    <button type="button" data-format="markdown" role="tab" aria-selected="false">Markdown</button>
+    <button type="button" data-format="javascript" role="tab" aria-selected="false">JavaScript <span class="soon">soon</span></button>
+    <button type="button" data-format="html" role="tab" aria-selected="false">HTML <span class="soon">soon</span></button>
+    <button type="button" data-format="css" role="tab" aria-selected="false">CSS <span class="soon">soon</span></button>
+  </div>
+</div>
+
+<div id="format-unsupported" class="unsupported-note" hidden>
+  <strong>Not available yet</strong>
+  <span id="unsupported-text"></span>
+</div>
+
+<div id="format-workspace">
+  <div class="tool-options" id="format-options"></div>
+
+  <div class="tool-panels">
+    <div class="panel" id="drop-zone">
+      <div class="panel-head"><span id="input-label">Input</span><span id="input-count"></span></div>
+      <textarea id="input" placeholder="Paste or drag a file in…"></textarea>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <span id="output-label">Output</span>
+        <div class="btn-row">
+          <button class="btn" id="copy-btn">Copy</button>
+          <button class="btn" id="download-btn">Download</button>
+        </div>
+      </div>
+      <div class="output-area" id="output" role="status"></div>
+      <div class="meta-row" id="meta-row"></div>
+    </div>
+  </div>
+
+  <div class="tool-options" style="padding-top:.8rem;">
+    <div class="btn-row" id="action-row"></div>
+    <div class="btn-row" style="margin-left:auto;">
+      <button class="btn" id="clear-btn">Clear</button>
+    </div>
+  </div>
+  <div class="status-line neutral" id="status">Paste JSON and press Format, or <span class="kbd-hint">⌘⏎</span>.</div>
+</div>
+{% endblock %}
+
+{% block education %}
+<h2>One workspace, every data format</h2>
+<p>The Formatter replaces jumping between separate pages for each language: pick a format from the tabs above, paste your content, and beautify, minify or validate it in place. JSON and Markdown run entirely client-side; XML, YAML and SQL are formatted on the server using real parsers so results stay accurate, and nothing you send is logged or stored.</p>
+<h2>Formats still being added</h2>
+<p>JavaScript, HTML and CSS formatting need a safe, dependency-light beautifier before we turn them on — rather than guess, the UI tells you plainly that they're not ready yet instead of silently producing incorrect output.</p>
+{% endblock %}
+
+{% block faq %}
+<h2>FAQ</h2>
+<div class="faq-item"><h3>Does switching formats lose my input?</h3><p>Yes — each format expects different content, so the input and output clear when you switch tabs. Copy or download first if you need to keep it.</p></div>
+<div class="faq-item"><h3>Is there a keyboard shortcut?</h3><p><span class="kbd-hint">⌘/Ctrl + Enter</span> runs the primary action (Format) for the active tab.</p></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/tools/api_tool.js') }}"></script>
+<script src="{{ url_for('static', filename='js/tools/formatter.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}File Too Large — Anvil{% endblock %}
+{% block content %}
+<div class="wrap error-page">
+  <div class="code">413</div>
+  <h1>That input is too large</h1>
+  <p>Server-side tools are limited to a few megabytes to keep the service fast for everyone. For larger files, consider a client-side-only tool where possible, or split the file into smaller pieces.</p>
+  <p><a href="/">Back home</a></p>
+</div>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "tools/_tool_base.html" %}
+{% block tool_body %}
+<div class="tool-options">
+  <label><input type="radio" name="mode" value="component" checked> Component (encodeURIComponent)</label>
+  <label><input type="radio" name="mode" value="full"> Full URI (encodeURI)</label>
+</div>
+<div class="tool-panels">
+  <div class="panel"><div class="panel-head"><span>Input</span></div><textarea id="input" placeholder="https://example.com/search?q=hello world&lang=en"></textarea></div>
+  <div class="panel"><div class="panel-head"><span>Output</span><div class="btn-row"><button class="btn" id="copy-btn">Copy</button></div></div><div class="output-area" id="output"></div></div>
+</div>
+<div class="btn-row" style="margin:1rem 0;">
+  <button class="btn primary" id="encode-btn">Encode ⌘⏎</button>
+  <button class="btn" id="decode-btn">Decode</button>
+  <button class="btn" id="parse-btn">Parse query string</button>
+</div>
+<div class="status-line neutral" id="status">Enter a URL or text and choose an action.</div>
+{% endblock %}
+{% block education %}<h2>Component vs. full URI encoding</h2><p>Component encoding escapes every reserved character, so it's correct for encoding a single query parameter value. Full URI encoding leaves characters like <code>/</code>, <code>:</code> and <code>?</code> untouched, so it's correct for encoding an entire URL.</p>{% endblock %}
+{% block faq %}<h2>FAQ</h2><div class="faq-item"><h3>What does "Parse query string" do?</h3><p>It splits a URL's query string into individual key/value pairs and decodes each one, useful for inspecting a long tracking or API URL.</p></div>{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const input = document.getElementById("input"), output = document.getElementById("output"), status = document.getElementById("status");
+  function mode() { return document.querySelector('input[name="mode"]:checked').value; }
+  document.getElementById("encode-btn").addEventListener("click", () => {
+    output.textContent = mode() === "full" ? encodeURI(input.value) : encodeURIComponent(input.value);
+    Anvil.setStatus(status, "Encoded.", "ok");
+  });
+  document.getElementById("decode-btn").addEventListener("click", () => {
+    try {
+      output.textContent = mode() === "full" ? decodeURI(input.value) : decodeURIComponent(input.value);
+      Anvil.setStatus(status, "Decoded.", "ok");
+    } catch (e) { Anvil.setStatus(status, "Malformed percent-encoding in input.", "error"); }
+  });
+  document.getElementById("parse-btn").addEventListener("click", () => {
+    try {
+      const q = input.value.includes("?") ? input.value.split("?")[1] : input.value;
+      const params = new URLSearchParams(q);
+      const rows = [...params.entries()].map(([k, v]) => `${k} = ${v}`);
+      output.textContent = rows.length ? rows.join("\n") : "No query parameters found.";
+      Anvil.setStatus(status, `Parsed ${rows.length} parameter(s).`, "ok");
+    } catch (e) { Anvil.setStatus(status, "Could not parse a query string from that input.", "error"); }
+  });
+  document.getElementById("copy-btn").addEventListener("click", (e) => Anvil.copyText(output.textContent, e.target));
+})();
+</script>
+{% endblock %}

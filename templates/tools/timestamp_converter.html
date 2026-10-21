@@ -1,0 +1,71 @@
+{% extends "tools/_tool_base.html" %}
+{% block tool_body %}
+<div class="panel" style="min-height:auto; margin-bottom:1rem;">
+  <div class="panel-head"><span>Current Unix timestamp</span></div>
+  <div class="output-area" id="now-out" style="min-height:auto; padding:.9rem; font-size:1.3rem;"></div>
+</div>
+
+<div class="tool-panels">
+  <div class="panel">
+    <div class="panel-head"><span>Unix timestamp → date</span></div>
+    <div style="padding:.9rem;">
+      <input type="text" id="ts-input" placeholder="1700000000" style="width:100%; background:var(--bg-inset); border:1px solid var(--border); color:var(--text); padding:.5rem; border-radius:var(--radius); font-family:var(--font-mono);">
+      <div class="tool-options" style="padding:.8rem 0 0;">
+        <label><input type="radio" name="unit" value="s" checked> Seconds</label>
+        <label><input type="radio" name="unit" value="ms"> Milliseconds</label>
+      </div>
+      <div class="output-area" id="ts-out" style="min-height:auto; padding:0;"></div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><span>Date → Unix timestamp</span></div>
+    <div style="padding:.9rem;">
+      <input type="datetime-local" id="date-input" step="1" style="width:100%; background:var(--bg-inset); border:1px solid var(--border); color:var(--text); padding:.5rem; border-radius:var(--radius); font-family:var(--font-mono);">
+      <div class="output-area" id="date-out" style="min-height:auto; padding:.8rem 0 0;"></div>
+    </div>
+  </div>
+</div>
+<div class="status-line neutral" id="status">Enter a timestamp or a date to convert.</div>
+{% endblock %}
+{% block education %}<h2>What is a Unix timestamp?</h2><p>A Unix timestamp counts the seconds (or milliseconds) elapsed since January 1, 1970, 00:00:00 UTC — the "Unix epoch." It's timezone-independent, which is why it's the standard way to store and exchange dates across systems.</p>{% endblock %}
+{% block faq %}<h2>FAQ</h2><div class="faq-item"><h3>My timestamp looks 1000x too large — why?</h3><p>You likely have a millisecond timestamp but selected "Seconds," or vice versa. JavaScript's <code>Date</code> object uses milliseconds internally, while many APIs use seconds — switch the unit toggle and try again.</p></div>{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const status = document.getElementById("status");
+  function nowLoop() {
+    document.getElementById("now-out").textContent = Math.floor(Date.now() / 1000);
+  }
+  nowLoop();
+  setInterval(nowLoop, 1000);
+
+  function unit() { return document.querySelector('input[name="unit"]:checked').value; }
+
+  function convertTs() {
+    const raw = document.getElementById("ts-input").value.trim();
+    const out = document.getElementById("ts-out");
+    if (!raw) { out.textContent = ""; return; }
+    const n = Number(raw);
+    if (Number.isNaN(n)) { out.innerHTML = '<span style="color:var(--bad)">Not a valid number.</span>'; return; }
+    const ms = unit() === "s" ? n * 1000 : n;
+    const d = new Date(ms);
+    if (isNaN(d.getTime())) { out.innerHTML = '<span style="color:var(--bad)">Out of range.</span>'; return; }
+    out.textContent = `UTC:   ${d.toISOString()}\nLocal: ${d.toString()}`;
+    Anvil.setStatus(status, "Converted.", "ok");
+  }
+  document.getElementById("ts-input").addEventListener("input", convertTs);
+  document.querySelectorAll('input[name="unit"]').forEach((r) => r.addEventListener("change", convertTs));
+
+  function convertDate() {
+    const raw = document.getElementById("date-input").value;
+    const out = document.getElementById("date-out");
+    if (!raw) { out.textContent = ""; return; }
+    const d = new Date(raw);
+    const seconds = Math.floor(d.getTime() / 1000);
+    out.textContent = `Seconds:      ${seconds}\nMilliseconds: ${d.getTime()}\nISO 8601:     ${d.toISOString()}`;
+    Anvil.setStatus(status, "Converted.", "ok");
+  }
+  document.getElementById("date-input").addEventListener("input", convertDate);
+})();
+</script>
+{% endblock %}

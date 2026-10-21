@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Anvil — Developer Tools for Everyday Work{% endblock %}
+{% block description %}Format, validate, convert, decode, compare and analyze your data. 30+ free developer tools that run privately in your browser.{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <div class="wrap">
+    <div class="eyebrow">format --json --pretty</div>
+    <h1>Developer tools for everyday work</h1>
+    <p class="lede">Format, validate, convert, decode, compare and analyze your data. Fast, private and free — most tools never leave your browser.</p>
+
+    <div class="hero-search">
+      <input id="hero-search-input" type="search" placeholder="Search developer tools… (jwt, json, hash, uuid)" aria-label="Search developer tools" autocomplete="off">
+      <div id="hero-search-results" class="search-results" data-search-results hidden></div>
+    </div>
+    <div class="hero-terms">
+      {% for tool in popular %}
+      <a href="/{{ tool.slug }}">{{ tool.name }}</a>
+      {% endfor %}
+    </div>
+
+    <div class="hero-stats">
+      <div class="stat"><span class="num">{{ tool_count }}+</span><span class="lbl">tools</span></div>
+      <div class="stat"><span class="num">100%</span><span class="lbl">free, no signup</span></div>
+      <div class="stat"><span class="num">Local</span><span class="lbl">processing where possible</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="block">
+  <div class="wrap">
+    <div class="block-head"><h2>Popular right now</h2></div>
+    <div class="tool-grid">
+      {% for tool in popular %}
+      <a class="tool-card" href="/{{ tool.slug }}">
+        <span class="name">{{ tool.name }}</span>
+        <p class="desc">{{ tool.short }}</p>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<div class="ad-container wrap" {% if not config.ADSENSE_ENABLED %}hidden{% endif %}>
+  <!-- AdSense slot: mid-page, between popular tools and full directory -->
+  {% if config.ADSENSE_ENABLED %}
+  <ins class="adsbygoogle" style="display:block" data-ad-client="{{ config.ADSENSE_CLIENT_ID }}" data-ad-slot="home-mid" data-ad-format="auto"></ins>
+  <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+  {% endif %}
+</div>
+
+{% for category in categories %}
+{% if grouped[category] %}
+<section class="block" id="{{ category | lower | replace(' & ', '-') | replace(' ', '-') }}">
+  <div class="wrap">
+    <div class="block-head"><h2>{{ category }}</h2></div>
+    <div class="tool-grid">
+      {% for tool in grouped[category] %}
+      <a class="tool-card" href="/{{ tool.slug }}">
+        <span class="name">{{ tool.name }}</span>
+        <p class="desc">{{ tool.short }}</p>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,103 @@
+{% extends "tools/_tool_base.html" %}
+{% block tool_body %}
+<div class="tool-panels">
+  <div class="panel"><div class="panel-head"><span>Original (A)</span></div><textarea id="input-a" placeholder="Line one&#10;Line two&#10;Line three"></textarea></div>
+  <div class="panel"><div class="panel-head"><span>Changed (B)</span></div><textarea id="input-b" placeholder="Line one&#10;Line 2&#10;Line three&#10;Line four"></textarea></div>
+</div>
+<div class="tool-options">
+  <label><input type="checkbox" id="ignore-ws"> Ignore whitespace</label>
+  <div class="btn-row" style="margin-left:auto;"><button class="btn primary" id="run-btn">Compare ⌘⏎</button><button class="btn" id="copy-btn" disabled>Copy diff</button><button class="btn" id="download-btn" disabled>Download</button></div>
+</div>
+<div class="panel"><div class="panel-head"><span>Diff (unified)</span></div><div class="output-area" id="output"></div></div>
+<div class="status-line neutral" id="status">Paste two texts and press Compare.</div>
+{% endblock %}
+{% block education %}<h2>How the text diff works</h2><p>This uses a line-based longest-common-subsequence algorithm — the same family of algorithm used by <code>diff</code> and Git — to find the minimal set of added and removed lines between the two inputs.</p>{% endblock %}
+{% block faq %}<h2>FAQ</h2><div class="faq-item"><h3>Does it diff word-by-word?</h3><p>No, this compares line by line. For very long single-line texts, break them into shorter lines first for a more useful diff.</p></div>{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const a = document.getElementById("input-a"), b = document.getElementById("input-b");
+  const output = document.getElementById("output"), status = document.getElementById("status");
+  const copyBtn = document.getElementById("copy-btn"), downloadBtn = document.getElementById("download-btn");
+  let lastDiff = null;  // Store the last diff result
+
+  function lcsDiff(linesA, linesB) {
+    const n = linesA.length, m = linesB.length;
+    const dp = Array.from({ length: n + 1 }, () => new Int32Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) {
+      for (let j = m - 1; j >= 0; j--) {
+        dp[i][j] = linesA[i] === linesB[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+    const result = [];
+    let i = 0, j = 0;
+    while (i < n && j < m) {
+      if (linesA[i] === linesB[j]) { result.push({ type: "same", line: linesA[i] }); i++; j++; }
+      else if (dp[i + 1][j] >= dp[i][j + 1]) { result.push({ type: "del", line: linesA[i] }); i++; }
+      else { result.push({ type: "add", line: linesB[j] }); j++; }
+    }
+    while (i < n) { result.push({ type: "del", line: linesA[i] }); i++; }
+    while (j < m) { result.push({ type: "add", line: linesB[j] }); j++; }
+    return result;
+  }
+
+  function diffToString(diff) {
+    return diff.map((d) => {
+      if (d.type === "add") return "+ " + d.line;
+      if (d.type === "del") return "- " + d.line;
+      return "  " + d.line;
+    }).join("\n");
+  }
+
+  const MAX_LINES = 5000; // O(n*m) LCS is safe up to ~5k x 5k on modern hardware
+
+  function normalize(text) {
+    let lines = text.split("\n");
+    if (document.getElementById("ignore-ws").checked) lines = lines.map((l) => l.trim().replace(/\s+/g, " "));
+    return lines;
+  }
+
+  document.getElementById("run-btn").addEventListener("click", () => {
+    const linesA = normalize(a.value), linesB = normalize(b.value);
+    if (linesA.length > MAX_LINES || linesB.length > MAX_LINES) {
+      Anvil.setStatus(status, `Input too large (max ${MAX_LINES.toLocaleString()} lines each). Truncate your input or use a command-line diff tool.`, "error");
+      output.textContent = "";
+      lastDiff = null;
+      copyBtn.disabled = true;
+      downloadBtn.disabled = true;
+      return;
+    }
+    const diff = lcsDiff(linesA, linesB);
+    const changed = diff.filter((d) => d.type !== "same").length;
+    output.textContent = "";
+    diff.forEach((d) => {
+      const div = document.createElement("div");
+      if (d.type === "add") { div.className = "diff-add"; div.textContent = "+ " + d.line; }
+      else if (d.type === "del") { div.className = "diff-del"; div.textContent = "- " + d.line; }
+      else { div.textContent = "  " + d.line; }
+      output.appendChild(div);
+    });
+
+    // Enable copy/download buttons when diff is generated
+    lastDiff = diff;
+    copyBtn.disabled = false;
+    downloadBtn.disabled = false;
+    Anvil.setStatus(status, changed ? `${changed} changed line(s).` : "No differences.", changed ? "error" : "ok");
+  });
+
+  copyBtn.addEventListener("click", (e) => {
+    if (lastDiff) {
+      Anvil.copyText(diffToString(lastDiff), e.target);
+    }
+  });
+
+  downloadBtn.addEventListener("click", () => {
+    if (lastDiff) {
+      Anvil.download("diff.txt", diffToString(lastDiff), "text/plain");
+    }
+  });
+
+  // escapeHtml removed — all output now uses textContent (no innerHTML with user data)
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,120 @@
+{% extends "tools/_tool_base.html" %}
+{% block tool_body %}
+<div class="notice-banner"><strong>Decoding a JWT does not verify its signature.</strong> Anyone can read a decoded JWT's contents — never treat unverified claims as trustworthy, and never paste a production secret or private key into any website, including this one.</div>
+<div class="panel">
+  <div class="panel-head"><span>JWT</span></div>
+  <textarea id="input" style="min-height:100px;" placeholder="eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"></textarea>
+</div>
+<div class="btn-row" style="margin:1rem 0;"><button class="btn primary" id="run-btn">Decode ⌘⏎</button></div>
+<div class="status-line neutral" id="status">Paste a JWT (header.payload.signature).</div>
+<div id="result" hidden style="margin-top:1rem;">
+  <div class="tool-panels">
+    <div class="panel"><div class="panel-head"><span>Header</span></div><div class="output-area" id="header-out"></div></div>
+    <div class="panel"><div class="panel-head"><span>Payload</span></div><div class="output-area" id="payload-out"></div></div>
+  </div>
+  <h3 style="margin-top:1.5rem;">Claims</h3>
+  <table id="claims-table" class="claims-table"></table>
+  <p style="margin-top:1rem; font-family:var(--font-mono); font-size:.8rem; color:var(--text-faint);">Signature (base64url, unverified): <span id="sig-out" style="word-break:break-all;"></span></p>
+</div>
+{% endblock %}
+
+{% block education %}
+<h2>What is a JWT?</h2>
+<p>A JSON Web Token has three dot-separated, Base64url-encoded parts: a header describing the signing algorithm, a payload of claims, and a signature. This tool decodes the header and payload so you can inspect them — it deliberately does not attempt signature verification, since that would require handling a secret or key.</p>
+<h2>Standard claims explained</h2>
+<ul>
+<li><code>iat</code> — issued-at time</li>
+<li><code>exp</code> — expiration time</li>
+<li><code>nbf</code> — not valid before this time</li>
+<li><code>iss</code> — issuer</li>
+<li><code>aud</code> — intended audience</li>
+<li><code>sub</code> — subject (usually the user ID)</li>
+</ul>
+{% endblock %}
+
+{% block faq %}
+<h2>FAQ</h2>
+<div class="faq-item"><h3>Is a decoded JWT trustworthy?</h3><p>No. Decoding only reveals the claims — it does not confirm they were issued by a legitimate server or haven't been tampered with. Only signature verification, done server-side with the correct key, confirms authenticity.</p></div>
+<div class="faq-item"><h3>Should I paste a production token here?</h3><p>Avoid pasting tokens containing sensitive production data into any third-party tool. This page processes everything locally and sends nothing to a server, but good practice is to use test tokens where possible.</p></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const input = document.getElementById("input"), status = document.getElementById("status"), result = document.getElementById("result");
+  const headerOut = document.getElementById("header-out"), payloadOut = document.getElementById("payload-out");
+  const claimsTable = document.getElementById("claims-table"), sigOut = document.getElementById("sig-out");
+  const KNOWN = { iat: "Issued at", exp: "Expires", nbf: "Not before", iss: "Issuer", aud: "Audience", sub: "Subject" };
+
+  function b64urlDecode(str) {
+    let t = str.replace(/-/g, "+").replace(/_/g, "/");
+    while (t.length % 4) t += "=";
+    return decodeURIComponent(atob(t).split("").map((c) => "%" + c.charCodeAt(0).toString(16).padStart(2, "0")).join(""));
+  }
+
+  function fmtTime(v) {
+    const d = new Date(v * 1000);
+    return isNaN(d.getTime()) ? String(v) : `${v} (${d.toISOString()})`;
+  }
+
+  function decode() {
+    const parts = input.value.trim().split(".");
+    if (parts.length !== 3) {
+      Anvil.setStatus(status, "That doesn't look like a JWT — expected 3 dot-separated parts.", "error");
+      result.hidden = true;
+      return;
+    }
+    let header, payload;
+    try {
+      header = JSON.parse(b64urlDecode(parts[0]));
+      payload = JSON.parse(b64urlDecode(parts[1]));
+    } catch (e) {
+      Anvil.setStatus(status, "Could not decode — malformed Base64url or JSON in header/payload.", "error");
+      result.hidden = true;
+      return;
+    }
+    headerOut.textContent = JSON.stringify(header, null, 2);
+    payloadOut.textContent = JSON.stringify(payload, null, 2);
+    sigOut.textContent = parts[2];
+
+    claimsTable.innerHTML = "";
+    // Guard against non-object payloads (null, arrays, strings, numbers).
+    // JWT payloads can legally be null ("alg":"none" tokens) or any JSON value,
+    // so we render the claims table only when payload is a plain object.
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      Object.entries(payload).forEach(([k, v]) => {
+        const tr = document.createElement("tr");
+        tr.style.borderBottom = "1px solid var(--border-soft)";
+        const label = KNOWN[k] ? `${k} — ${KNOWN[k]}` : k;
+        const value = ["iat", "exp", "nbf"].includes(k) && typeof v === "number" ? fmtTime(v) : JSON.stringify(v);
+        const td1 = document.createElement("td");  td1.textContent = label;
+        const td2 = document.createElement("td");  td2.textContent = value;
+        tr.appendChild(td1); tr.appendChild(td2);
+        claimsTable.appendChild(tr);
+      });
+    } else if (payload === null) {
+      const tr = document.createElement("tr");
+      const td1 = document.createElement("td"); td1.textContent = "(no claims)";
+      const td2 = document.createElement("td"); td2.textContent = "null payload — typical for unsigned \"none\"-algorithm tokens.";
+      tr.appendChild(td1); tr.appendChild(td2);
+      tr.style.borderBottom = "1px solid var(--border-soft)";
+      claimsTable.appendChild(tr);
+    } else {
+      const tr = document.createElement("tr");
+      const td1 = document.createElement("td"); td1.textContent = "(non-object payload)";
+      const td2 = document.createElement("td"); td2.textContent = JSON.stringify(payload);
+      tr.appendChild(td1); tr.appendChild(td2);
+      tr.style.borderBottom = "1px solid var(--border-soft)";
+      claimsTable.appendChild(tr);
+    }
+
+    result.hidden = false;
+    Anvil.setStatus(status, "Decoded (signature not verified).", "ok");
+  }
+
+  // Live decode as you type, plus the explicit button / ⌘⏎ shortcut.
+  input.addEventListener("input", decode);
+  document.getElementById("run-btn").addEventListener("click", decode);
+})();
+</script>
+{% endblock %}

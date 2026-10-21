@@ -1,0 +1,43 @@
+{% extends "tools/_tool_base.html" %}
+{% block tool_body %}
+<div class="tool-panels">
+  <div class="panel">
+    <div class="panel-head"><span>Original (A)</span></div>
+    <textarea id="input-a" placeholder='{"name":"John","age":30}'></textarea>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><span>Changed (B)</span></div>
+    <textarea id="input-b" placeholder='{"name":"James","age":30,"city":"Lucknow"}'></textarea>
+  </div>
+</div>
+<div class="tool-options">
+  <label><input type="checkbox" id="ignore-order" checked> Ignore object key order (objects with the same key-value pairs but different key order are treated as equal)</label>
+  <label><input type="checkbox" id="ignore-array-order"> Ignore array order (arrays with the same elements but different order are treated as equal)</label>
+  <div class="btn-row" style="margin-left:auto;">
+    <button class="btn primary" id="diff-btn">Compare ⌘⏎</button>
+    <button class="btn" id="copy-btn" disabled>Copy diff</button>
+  </div>
+</div>
+<div class="panel" style="min-height:200px;">
+  <div class="panel-head"><span>Differences</span></div>
+  <div class="output-area" id="output"></div>
+</div>
+<div class="status-line neutral" id="status">Paste two JSON documents and press Compare.</div>
+{% endblock %}
+
+{% block education %}
+<h2>How the JSON diff works</h2>
+<p>This compares two JSON documents structurally, not line by line — it walks both trees and reports every added property, removed property, and changed value, including inside nested objects and arrays.</p>
+<pre>user.name
+OLD: John
+NEW: James</pre>
+{% endblock %}
+
+{% block faq %}
+<h2>FAQ</h2>
+<div class="faq-item"><h3>Does key order matter?</h3><p>By default, no — <code>{"a":1,"b":2}</code> and <code>{"b":2,"a":1}</code> are treated as identical. Untick "Ignore key order" if order matters for your use case.</p></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/tools/json_diff.js') }}"></script>
+{% endblock %}
