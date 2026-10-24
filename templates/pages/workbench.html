@@ -39,6 +39,10 @@
   <div id="wb-body"></div>
 
   <div class="status-line neutral" id="wb-status">Choose an operation and press Run, or <span class="kbd-hint">⌘/Ctrl+Enter</span>.</div>
+  <div class="wb-draft-bar">
+    <span id="wb-draft-note" class="wb-draft-note"></span>
+    <button class="btn" id="wb-clear-drafts" type="button">Clear saved drafts</button>
+  </div>
 </div>
 {% endblock %}
 
@@ -46,5 +50,6 @@
 <script>window.CAPABILITY_INDEX = {{ capability_json | safe }};</script>
 <script src="{{ url_for('static', filename='js/md5.js') }}"></script>
 <script src="{{ url_for('static', filename='js/tools/api_tool.js') }}"></script>
+<script src="{{ url_for('static', filename='js/workbench-drafts.js') }}"></script>
 <script src="{{ url_for('static', filename='js/workbench.js') }}"></script>
 {% endblock %}

@@ -2,7 +2,7 @@
 // the user has already visited, so purely client-side tools keep working
 // without a network connection. Server-backed tools (XML/YAML/SQL/CSV
 // conversion) still require connectivity.
-const CACHE_NAME = "anvil-cache-v7";
+const CACHE_NAME = "anvil-cache-v8";
 const APP_SHELL = [
   "/",
   "/static/css/main.css",
@@ -10,6 +10,7 @@ const APP_SHELL = [
   "/static/js/md5.js",
   "/static/js/command-palette.js",
   "/static/js/terminal-bg.js",
+  "/static/js/workbench-drafts.js",
   "/static/js/workbench.js",
   "/static/js/tools/api_tool.js",
   "/static/js/tools/regex_worker.js",

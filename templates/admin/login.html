@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Admin login — Anvil{% endblock %}
+{% block head_extra %}<meta name="csrf-token" content="{{ csrf_token() }}">{% endblock %}
+{% block content %}
+<section class="page-section">
+  <div class="wrap" style="max-width: 540px;">
+    <h1>Admin sign-in</h1>
+    <p class="lede">Anvil admin access is granted to your Supabase user only if your account is in <code>public.admin_profiles</code>. Sign in with a Supabase access token (the JWT issued by the Supabase auth API).</p>
+
+    <form id="admin-login-form" class="contact-form" novalidate>
+      <div class="field">
+        <label for="admin-access-token">Supabase access token (JWT)</label>
+        <textarea id="admin-access-token" name="access_token" rows="6"
+          placeholder="Paste a Supabase access token here. The token is verified against Supabase, then discarded." required></textarea>
+        <small class="field-error" data-error-for="access_token"></small>
+      </div>
+
+      <div class="contact-actions">
+        <button type="submit" class="btn primary" id="admin-login-submit" data-loading-text="Verifying…">
+          <span class="btn-label">Verify and sign in</span>
+        </button>
+        <span class="contact-status" id="admin-login-status" role="status" aria-live="polite"></span>
+      </div>
+
+      {% if error == "not_admin" %}
+      <p class="field-error" style="margin-top: 1rem;">Your Supabase account is not configured as an Anvil admin.</p>
+      {% endif %}
+    </form>
+
+    <details class="admin-help">
+      <summary>How do I get an access token?</summary>
+      <p>The fastest path is to sign into your Supabase project dashboard, open the SQL editor or Auth → Users, and use the <em>Get user token</em> feature for a real admin user. Production deployments should replace this paste-token form with a real OAuth redirect.</p>
+      <p>The token is sent <strong>only</strong> to <code>/admin/login</code> on this server, verified against the Supabase auth API, then discarded — it is never written to disk or shipped to the browser after verification.</p>
+    </details>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/admin.js') }}"></script>
+{% endblock %}

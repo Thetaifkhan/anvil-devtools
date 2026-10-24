@@ -1,0 +1,67 @@
+{% extends "admin/layout.html" %}
+{% set section_title = "Audit log" %}
+
+{% block admin_body %}
+<form method="get" class="admin-filter">
+  <label>Table filter:
+    <input type="text" name="table" value="{{ table_filter }}" placeholder="e.g. support_queries" maxlength="100">
+  </label>
+  <label>Per page:
+    <select name="per_page">
+      {% for n in [25, 50, 100, 200] %}
+      <option value="{{ n }}" {{ 'selected' if n == per_page }}>{{ n }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="btn ghost small">Apply</button>
+</form>
+
+{% if error %}
+<p class="empty">Could not load audit log: {{ error }}</p>
+{% elif rows %}
+<table class="admin-table audit-table">
+  <thead>
+    <tr>
+      <th>When</th>
+      <th>Table</th>
+      <th>Operation</th>
+      <th>Row PK</th>
+      <th>Changed by</th>
+      <th>Diff (before → after)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.occurred_at.strftime('%Y-%m-%d %H:%M:%S UTC') if r.occurred_at else '—' }}</td>
+      <td><code>{{ r.table_schema }}.{{ r.table_name }}</code></td>
+      <td><span class="pill op-{{ r.operation }}">{{ r.operation }}</span></td>
+      <td>{{ r.row_pk or '—' }}</td>
+      <td>{{ r.changed_by or '—' }}</td>
+      <td>
+        <details>
+          <summary>Show diff</summary>
+          <pre class="audit-diff">Before: {{ r.before_data | tojson(indent=2) if r.before_data else '—' }}
+
+After: {{ r.after_data | tojson(indent=2) if r.after_data else '—' }}</pre>
+        </details>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% set pages = ((total + per_page - 1) // per_page) if per_page else 1 %}
+<nav class="pagination" aria-label="Pagination">
+  {% if page > 1 %}
+  <a href="?table={{ table_filter }}&page={{ page - 1 }}&per_page={{ per_page }}" class="btn ghost small">← Prev</a>
+  {% endif %}
+  <span>Page {{ page }} of {{ pages }} ({{ total }} total)</span>
+  {% if page < pages %}
+  <a href="?table={{ table_filter }}&page={{ page + 1 }}&per_page={{ per_page }}" class="btn ghost small">Next →</a>
+  {% endif %}
+</nav>
+{% else %}
+<p class="empty">No audit rows recorded yet. Audit triggers fire on INSERT/UPDATE/DELETE of <code>support_queries</code> and <code>admin_profiles</code>.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends "admin/layout.html" %}
+{% set section_title = "Engagement" %}
+
+{% block admin_body %}
+<form method="get" class="admin-filter">
+  <label>Days:
+    <select name="days">
+      {% for d in [7, 14, 30, 60, 90] %}
+      <option value="{{ d }}" {{ 'selected' if d == days }}>{{ d }} days</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="btn ghost small">Apply</button>
+</form>
+
+{% if error %}
+<p class="empty">Could not load engagement data: {{ error }}</p>
+{% elif rows %}
+<table class="admin-table">
+  <thead>
+    <tr>
+      <th>Day</th>
+      <th>Sessions</th>
+      <th>Desktop</th>
+      <th>Mobile</th>
+      <th>Tablet</th>
+      <th>Unknown</th>
+      <th>Avg engagement (s)</th>
+      <th>Max engagement (s)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.day }}</td>
+      <td>{{ r.sessions }}</td>
+      <td>{{ r.desktop }}</td>
+      <td>{{ r.mobile }}</td>
+      <td>{{ r.tablet }}</td>
+      <td>{{ r.unknown_device }}</td>
+      <td>{{ r.avg_engagement_s }}</td>
+      <td>{{ r.max_engagement_s }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No engagement data in the selected window.</p>
+{% endif %}
+{% endblock %}

@@ -23,6 +23,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  {% if request.path.startswith('/admin') %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+  {% endif %}
 
   <script>
     // Applied before paint to avoid a flash of the wrong theme.
@@ -171,6 +174,7 @@
     window.TOOL_INDEX = {{ tool_index_json | default('[]') | safe }};
   </script>
   <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/analytics.js') }}"></script>
   <script src="{{ url_for('static', filename='js/terminal-bg.js') }}"></script>
   <script src="{{ url_for('static', filename='js/command-palette.js') }}"></script>
   <script>

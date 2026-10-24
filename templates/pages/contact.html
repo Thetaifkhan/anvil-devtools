@@ -1,10 +1,109 @@
 {% extends "base.html" %}
 {% block title %}Contact — Anvil{% endblock %}
+{% block description %}Send the Anvil team a bug report, feature request, or general question. Submissions are queued durably and tracked with a reference code.{% endblock %}
+
 {% block content %}
-<div class="wrap page-content">
-<h1>Contact</h1>
-<p>Found a bug, have a feature request, or want to report an issue with a tool? We'd like to hear from you.</p>
-<p>Email: <a href="mailto:hello@example.com">hello@example.com</a></p>
-<p>Please don't include sensitive data (secrets, tokens, personal information) in bug reports — a redacted or synthetic example is usually enough to reproduce most issues.</p>
-</div>
+<section class="page-section contact-section">
+  <div class="wrap contact-wrap">
+    <div class="contact-intro">
+      <h1>Contact</h1>
+      <p class="lede">Found a bug, have a feature request, or want to ask something? Tell us what's on your mind.</p>
+      <p class="contact-note">
+        We never store raw IP addresses, source code, JWTs, API keys, or anything you paste into a tool. Please don't include
+        secrets in your report — a redacted or synthetic example is usually enough to reproduce most issues.
+      </p>
+      <p class="contact-note">
+        On submission you'll get a <strong>reference code</strong> you can use to follow up. If Supabase is briefly unavailable,
+        your submission is still accepted and queued durably; we'll deliver it as soon as the database wakes up.
+      </p>
+    </div>
+
+    <form id="contact-form" class="contact-form" novalidate>
+      <div class="contact-grid">
+        <div class="field">
+          <label for="contact-category">Type <span aria-hidden="true">*</span></label>
+          <select id="contact-category" name="category" required>
+            <option value="">Pick a category…</option>
+            <option value="bug_report">🐛 Bug report</option>
+            <option value="feature_request">💡 Feature request</option>
+            <option value="general_question">❓ General question</option>
+            <option value="feedback">💬 Feedback</option>
+            <option value="other">📝 Other</option>
+          </select>
+          <small class="field-error" data-error-for="category"></small>
+        </div>
+
+        <div class="field">
+          <label for="contact-subject">Subject <span aria-hidden="true">*</span></label>
+          <input id="contact-subject" name="subject" type="text" maxlength="200" autocomplete="off" required>
+          <small class="counter" data-counter-for="subject"><span data-count>0</span>/200</small>
+          <small class="field-error" data-error-for="subject"></small>
+        </div>
+
+        <div class="field">
+          <label for="contact-name">Your name <span class="optional">(optional)</span></label>
+          <input id="contact-name" name="name" type="text" maxlength="200" autocomplete="name">
+          <small class="counter" data-counter-for="name"><span data-count>0</span>/200</small>
+        </div>
+
+        <div class="field">
+          <label for="contact-email">Email <span class="optional">(optional, for follow-up)</span></label>
+          <input id="contact-email" name="email" type="email" maxlength="320" autocomplete="email">
+          <small class="field-error" data-error-for="email"></small>
+        </div>
+
+        <div class="field field-tool">
+          <label for="contact-tool">Related tool <span class="optional">(optional)</span></label>
+          <select id="contact-tool" name="tool_slug">
+            <option value="">— none —</option>
+            {% for t in tools %}
+            <option value="{{ t.slug }}">{{ t.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="contact-page">Page URL <span class="optional">(auto-filled)</span></label>
+          <input id="contact-page" name="page_url" type="url" maxlength="2048" readonly>
+        </div>
+      </div>
+
+      <div class="field field-message">
+        <label for="contact-message">Message <span aria-hidden="true">*</span></label>
+        <textarea id="contact-message" name="message" rows="8" maxlength="8000" required></textarea>
+        <small class="counter" data-counter-for="message"><span data-count>0</span>/8000</small>
+        <small class="field-error" data-error-for="message"></small>
+      </div>
+
+      <div class="field field-consent">
+        <label class="checkbox">
+          <input id="contact-consent" name="consent" type="checkbox">
+          <span>I understand my submission is stored to investigate and reply. See the <a href="/privacy-policy">privacy policy</a>.</span>
+        </label>
+      </div>
+
+      <div class="contact-actions">
+        <button type="submit" class="btn primary" id="contact-submit" data-loading-text="Submitting…">
+          <span class="btn-label">Send submission</span>
+        </button>
+        <span class="contact-status" id="contact-status" role="status" aria-live="polite"></span>
+      </div>
+
+      <div class="contact-result" id="contact-result" hidden>
+        <div class="result-card">
+          <div class="result-icon" aria-hidden="true">✓</div>
+          <h2>Submission accepted</h2>
+          <p>Your reference code is:</p>
+          <code id="result-reference" class="result-reference"></code>
+          <p class="result-meta" id="result-meta"></p>
+          <button type="button" class="btn ghost" id="result-reset">Send another</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/contact.js') }}"></script>
 {% endblock %}

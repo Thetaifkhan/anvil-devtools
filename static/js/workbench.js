@@ -2,16 +2,24 @@
  * Workbench — one page for every operation.
  *
  * STATE INVARIANT:
- *   Changing operation, format, action, or direction NEVER silently destroys
- *   user data.  Only explicit destructive buttons (Clear / Reset) may do so.
+ *   Changing operation, format, action, or direction NEVER clears the input
+ *   text. Only explicit destructive buttons (Clear / Reset) may do so.
  *
  * ARCHITECTURE:
- *   - STATE[key] stores all per-(operation:format) state independently.
+ *   - INPUT drafts live in DRAFTS[slot], one per input slot. A slot is the
+ *     operation (formats inside it share the text); the JWT and diff layouts
+ *     have their own slots. Switching into an empty slot carries the current
+ *     text over, so the text survives every selector change.
+ *   - OUTPUT, options and the selected action live in STATE[operation:format].
+ *   - Input drafts are saved to sessionStorage through WorkbenchDrafts
+ *     (workbench-drafts.js), so a refresh in the same tab keeps them.
  *   - Layouts are built once and shown/hidden; the DOM is not rebuilt on
  *     every selector change.
  *   - The Run button always reads actionSelect.value — never hardcodes the
  *     first action.
- *   - All fetch calls use a request counter to discard stale responses.
+ *   - Every Run creates a run record. A response is shown only if it belongs
+ *     to the latest run, the same view is still active, and the input is
+ *     unchanged since the run started. Otherwise it is discarded.
  */
 (function () {
   "use strict";
@@ -82,14 +90,17 @@
     "tester:http-status":"/http-status-lookup",
   };
 
-  // ── Full per-(operation:format) state model ────────────────────────────────
+  // Current workbench selection
+  const wb = { operation: "formatter", format: "json", action: "Beautify" };
+
+  // ── Output / option state, per (operation:format) ─────────────────────────
   // Each key is "operation:format", e.g. "formatter:json", "diff:text"
   const STATE = {};
   function stateKey() { return `${wb.operation}:${wb.format}`; }
   function stateFor(key) {
     if (!STATE[key]) {
       STATE[key] = {
-        inputA: "", inputB: "", output: "", outputHtml: "",
+        output: "", outputHtml: "",
         hasError: false, options: {}, scrollA: 0, scrollB: 0,
         action: null,   // last selected action for this op:fmt
       };
@@ -97,11 +108,79 @@
     return STATE[key];
   }
 
-  // Current workbench selection
-  const wb = { operation: "formatter", format: "json", action: "Beautify" };
+  // ── Input drafts, per input slot ──────────────────────────────────────────
+  // a = primary input, b = secondary input (diff only).
+  // Formats of one operation share a slot, so changing format never changes
+  // the text. The JWT box and the diff pair have their own slots.
+  const DRAFTS = {};
+  function slotFor(op, fmt) {
+    if (op === "diff") return "diff";
+    if (op === "decoder" && fmt === "jwt") return "jwt";
+    return op;
+  }
+  function currentSlot() { return slotFor(wb.operation, wb.format); }
+  function draftFor(slot) {
+    if (!DRAFTS[slot]) DRAFTS[slot] = { a: "", b: "" };
+    return DRAFTS[slot];
+  }
 
-  // ── Request race-condition guard ──────────────────────────────────────────
-  let _reqId = 0;
+  // ── Draft persistence (sessionStorage; see workbench-drafts.js) ───────────
+  const draftStore = (window.WorkbenchDrafts && window.WorkbenchDrafts.createDraftStore)
+    ? window.WorkbenchDrafts.createDraftStore()
+    : null;
+  const draftNote = document.getElementById("wb-draft-note");
+  const storageOk = Boolean(draftStore && draftStore.available());
+  let _persistTimer = null;
+
+  function persistDrafts() {
+    if (draftStore) draftStore.save(DRAFTS);   // failures fall back to in-memory drafts
+  }
+  function schedulePersist() {
+    clearTimeout(_persistTimer);
+    _persistTimer = setTimeout(persistDrafts, 250);
+  }
+  function flushPersist() {
+    clearTimeout(_persistTimer);
+    persistDrafts();
+  }
+
+  function updateDraftNote() {
+    if (!draftNote) return;
+    draftNote.textContent = storageOk
+      ? "Drafts are kept in this tab until you close it. Use Clear to remove them. JWT text is never saved."
+      : "Browser storage is unavailable, so drafts are kept only until you refresh the page.";
+  }
+
+  // ── Request / run tracking ────────────────────────────────────────────────
+  // Every Run gets an id. A response is applied only if its run is still the
+  // latest, the view has not changed, and the input still matches what was
+  // sent. Anything else is dropped, so an old response can never overwrite a
+  // newer result or the user's current text.
+  let _runSeq = 0;
+  let currentRun = null;
+  function startRun() {
+    currentRun = {
+      id: ++_runSeq,
+      key: stateKey(),
+      text: primaryText(),
+    };
+    return currentRun;
+  }
+  function primaryText() {
+    const el = getPrimaryInputEl();
+    return el ? el.value : "";
+  }
+  // Applies `apply()` for a finished run, or explains why it was dropped.
+  function present(run, apply) {
+    if (!run || run.id !== _runSeq) return false;           // superseded by a newer Run
+    if (run.key !== stateKey()) return false;               // user changed operation or format
+    if (primaryText() !== run.text) {                       // input edited while running
+      setStatus("Input changed while this was running — press Run to update the result.", "neutral");
+      return false;
+    }
+    apply();
+    return true;
+  }
 
   // ── Security helpers ──────────────────────────────────────────────────────
   function escHtml(s) {
@@ -146,11 +225,12 @@
   function saveState() {
     const key = stateKey();
     const s   = stateFor(key);
+    const d   = draftFor(currentSlot());
     const inpA = getPrimaryInputEl();
     const inpB = getSecondaryInputEl();
     const out  = getOutputEl();
-    if (inpA) { s.inputA = inpA.value; s.scrollA = inpA.scrollTop; s.cursorA = inpA.selectionStart; }
-    if (inpB) { s.inputB = inpB.value; s.scrollB = inpB.scrollTop; }
+    if (inpA) { d.a = inpA.value; s.scrollA = inpA.scrollTop; s.cursorA = inpA.selectionStart; }
+    if (inpB) { d.b = inpB.value; s.scrollB = inpB.scrollTop; }
     if (out)  {
       s.output     = out.textContent;
       s.outputHtml = out.innerHTML;
@@ -175,11 +255,12 @@
   function restoreState() {
     const key = stateKey();
     const s   = stateFor(key);
+    const d   = draftFor(currentSlot());
     const inpA = getPrimaryInputEl();
     const inpB = getSecondaryInputEl();
     const out  = getOutputEl();
-    if (inpA) { inpA.value = s.inputA || ""; }
-    if (inpB) { inpB.value = s.inputB || ""; }
+    if (inpA) { inpA.value = d.a || ""; }
+    if (inpB) { inpB.value = d.b || ""; }
     if (out) {
       if (s.hasError) {
         out.className = "output-area has-error";
@@ -308,8 +389,9 @@
     linkSec.appendChild(linkInner);
     bodyEl.appendChild(linkSec);
 
-    // Wire utility button handlers
+    // Wire utility button handlers and draft tracking for every input box
     wireUtilButtons();
+    wireDraftInputs();
   }
 
   function buildPanel(id, label, isOutput, placeholder) {
@@ -364,9 +446,10 @@
       Anvil.download(`result.${ext}`, out ? (out.textContent || "") : "", mime);
     });
     on("wb-clear", () => {
+      clearSlotInput(currentSlot());
       const inp = g("wb-input"); if (inp) inp.value = "";
       const out = g("wb-output"); if (out) { out.textContent = ""; out.className = "output-area"; }
-      delete STATE[stateKey()];
+      clearOutputState();
       setStatus("Cleared.", "neutral");
     });
 
@@ -374,10 +457,11 @@
     on("wb-copy-diff", (e) => { const o = g("wb-diff-output"); Anvil.copyText(o ? o.innerText : "", e.currentTarget); });
     on("wb-download-diff", () => { const o = g("wb-diff-output"); Anvil.download("diff.txt", o ? o.innerText : "", "text/plain"); });
     on("wb-clear-diff", () => {
+      clearSlotInput("diff");
       const a = g("wb-input-a"); if (a) a.value = "";
       const b = g("wb-input-b"); if (b) b.value = "";
       const o = g("wb-diff-output"); if (o) o.innerHTML = "";
-      delete STATE[stateKey()];
+      clearOutputState();
       setStatus("Cleared.", "neutral");
     });
 
@@ -385,16 +469,61 @@
     on("wb-copy-jwt",    (e) => Anvil.copyText((g("wb-jwt-payload") || {}).textContent || "", e.currentTarget));
     on("wb-download-jwt", () => Anvil.download("jwt-payload.json", (g("wb-jwt-payload") || {}).textContent || "", "application/json"));
     on("wb-clear-jwt",   () => {
+      clearSlotInput("jwt");
       const inp = g("wb-jwt-input"); if (inp) inp.value = "";
       ["wb-jwt-header","wb-jwt-payload","wb-jwt-sig"].forEach((id) => { const el = g(id); if (el) el.textContent = ""; });
-      delete STATE[stateKey()];
+      clearOutputState();
       setStatus("Cleared.", "neutral");
     });
 
     // ── Generator ────────────────────────────────────────────────────────
     on("wb-copy-gen",    (e) => { const o = g("wb-gen-output"); Anvil.copyText(o ? (o.textContent || o.innerText) : "", e.currentTarget); });
     on("wb-download-gen", () => { const o = g("wb-gen-output"); Anvil.download("generated.txt", o ? (o.textContent || o.innerText) : "", "text/plain"); });
-    on("wb-clear-gen",   () => { const o = g("wb-gen-output"); if (o) o.textContent = ""; delete STATE[stateKey()]; setStatus("Cleared.", "neutral"); });
+    on("wb-clear-gen",   () => {
+      const o = g("wb-gen-output"); if (o) o.textContent = "";
+      clearOutputState();
+      setStatus("Cleared.", "neutral");
+    });
+
+    // ── Saved drafts (explicit, user-triggered) ──────────────────────────
+    on("wb-clear-drafts", () => {
+      const hasText = Object.values(DRAFTS).some((d) => d.a || d.b);
+      if (hasText && !window.confirm("Remove all saved input drafts from this tab?")) return;
+      Object.keys(DRAFTS).forEach((slot) => { DRAFTS[slot] = { a: "", b: "" }; });
+      if (draftStore) draftStore.discard();
+      restoreState();
+      setStatus("Saved drafts removed.", "neutral");
+    });
+  }
+
+  // Input-level clears only touch the draft for the given slot.
+  function clearSlotInput(slot) {
+    const d = draftFor(slot);
+    d.a = "";
+    d.b = "";
+    schedulePersist();
+  }
+  // Clears the output and its cached state for the current view. Options and
+  // the selected action are kept, so an explicit Clear does not reset settings.
+  function clearOutputState() {
+    const s = stateFor(stateKey());
+    s.output = ""; s.outputHtml = ""; s.hasError = false;
+    const out = getOutputEl();
+    if (out) { out.textContent = ""; out.className = "output-area"; }
+  }
+
+  // Keep drafts in sync with what the user types, and persist them.
+  function wireDraftInputs() {
+    ["wb-input", "wb-input-a", "wb-input-b", "wb-jwt-input"].forEach((id) => {
+      const el = g(id);
+      if (!el) return;
+      el.addEventListener("input", () => {
+        if (el === getSecondaryInputEl()) draftFor(currentSlot()).b = el.value;
+        else if (el === getPrimaryInputEl()) draftFor(currentSlot()).a = el.value;
+        else return;
+        schedulePersist();
+      });
+    });
   }
 
   function g(id) { return document.getElementById(id); }
@@ -575,22 +704,82 @@
   }
 
   // ── Safe API fetch ────────────────────────────────────────────────────────
+  // Resolves with the JSON body, or null on network failure. The input text is
+  // never touched here, so a failed request leaves the user's draft intact.
+  // Use runApi(), which passes the reply through present() to drop stale ones.
   async function safeApiFetch(endpoint, body) {
-    const reqId = ++_reqId;
+    const run = currentRun;
     runBtn.disabled = true;
+    const startedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+    // Fire a tool_run analytics event so the admin dashboard can count
+    // usage by tool + format. The browser never sends tool input or
+    // output — only the tool_slug, operation, format, and action keys.
+    if (window.AnvilAnalytics) {
+      try {
+        window.AnvilAnalytics.trackEvent("tool_run", {
+          tool_slug: state.tool,
+          page_path: window.location.pathname.slice(0, 2048),
+          properties: {
+            operation: state.operation,
+            format: state.format,
+            action: state.action,
+            input_size_bytes: typeof (body && body.text) === "string" ? body.text.length : 0,
+          },
+        });
+      } catch (_) { /* analytics must never break the tool */ }
+    }
     try {
       const res  = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      if (reqId !== _reqId) return null;
       const data = await res.json();
-      if (reqId !== _reqId) return null;
+      // Fire success/error events so the dashboard can compute success rate.
+      if (window.AnvilAnalytics && data) {
+        try {
+          var dur = (typeof performance !== "undefined" && performance.now)
+            ? Math.max(0, Math.round(performance.now() - startedAt))
+            : 0;
+          var ok = !!data.ok;
+          window.AnvilAnalytics.trackEvent(ok ? "tool_success" : "tool_error", {
+            tool_slug: state.tool,
+            page_path: window.location.pathname.slice(0, 2048),
+            properties: {
+              operation: state.operation,
+              format: state.format,
+              action: state.action,
+              duration_ms: dur,
+              outcome: ok ? "ok" : "error",
+              error_code: ok ? "" : ((data.error || "").slice(0, 60)),
+            },
+          });
+        } catch (_) { /* ignore */ }
+      }
       return data;
     } catch (_) {
-      if (reqId !== _reqId) return null;
-      setStatus("Network error — could not reach the server.", "error");
+      if (run && run.id === _runSeq) setStatus("Network error — could not reach the server.", "error");
+      if (window.AnvilAnalytics) {
+        try {
+          window.AnvilAnalytics.trackEvent("tool_error", {
+            tool_slug: state.tool,
+            page_path: window.location.pathname.slice(0, 2048),
+            properties: {
+              operation: state.operation, format: state.format, action: state.action,
+              outcome: "error", error_code: "network_error",
+            },
+          });
+        } catch (_) {}
+      }
       return null;
     } finally {
-      if (reqId === _reqId) runBtn.disabled = false;
+      if (run && run.id === _runSeq) runBtn.disabled = false;
     }
+  }
+
+  // Sends a request for the current run and hands the reply to `handler`
+  // only if present() accepts it. Use this for every async result.
+  function runApi(endpoint, body, handler) {
+    const run = currentRun;
+    return safeApiFetch(endpoint, body).then((data) => {
+      if (data) present(run, () => handler(data));
+    });
   }
 
   function clearOutput(msg) {
@@ -693,8 +882,7 @@
 
     if (fmt === "xml") {
       if (action === "Validate") {
-        safeApiFetch("/api/xml-validate", { text }).then((data) => {
-          if (!data) return;
+        runApi("/api/xml-validate", { text }, (data) => {
           const out = g("wb-output"); if (!out) return;
           if (data.valid) {
             out.className = "output-area"; out.textContent = "Valid XML."; setStatus("Valid XML.", "ok");
@@ -707,8 +895,7 @@
       }
       const ind = g("opt-indent");
       const indent = ind ? (ind.value === "tab" ? "\t" : " ".repeat(Number(ind.value))) : "  ";
-      safeApiFetch("/api/xml-format", { text, minify: action === "Minify", indent }).then((data) => {
-        if (!data) return;
+      runApi("/api/xml-format", { text, minify: action === "Minify", indent }, (data) => {
         const out = g("wb-output"); if (!out) return;
         if (!data.ok) { out.className = "output-area has-error"; out.textContent = data.error || "Error."; setStatus(data.error || "Error.", "error"); return; }
         out.className = "output-area"; out.textContent = data.result; updateMeta("wb-output", data.result);
@@ -718,32 +905,43 @@
 
     if (fmt === "yaml") {
       setStatus("Processing…", "neutral");
-      const reqId = ++_reqId;
-      fetch("/api/yaml-to-json", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({text}) })
-        .then((r) => r.json()).then((toJson) => {
-          if (reqId !== _reqId) return;
-          if (!toJson.ok) { clearOutput(toJson.error || "Invalid YAML."); setStatus(toJson.error || "Invalid YAML.", "error"); return; }
-          if (action === "Validate") { const out = g("wb-output"); if (out) { out.className = "output-area"; out.textContent = "Valid YAML."; } setStatus("Valid YAML.", "ok"); runBtn.disabled = false; return; }
-          return fetch("/api/json-to-yaml", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({text:toJson.result}) })
-            .then((r) => r.json()).then((toYaml) => {
-              if (reqId !== _reqId) return;
-              if (!toYaml.ok) { clearOutput(toYaml.error || "Error."); setStatus(toYaml.error || "Error.", "error"); return; }
-              const out = g("wb-output"); if (out) { out.className = "output-area"; out.textContent = toYaml.result; updateMeta("wb-output", toYaml.result); }
-              setStatus("Formatted. (Comments and anchors are not preserved.)", "ok"); runBtn.disabled = false;
-            });
-        }).catch(() => { if (reqId === _reqId) setStatus("Network error.", "error"); runBtn.disabled = false; });
+      const run = currentRun;
+      const postJson = (url, payload) =>
+        fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+          .then((r) => r.json());
+      const showError = (msg) => { clearOutput(msg); setStatus(msg, "error"); };
+      const showOutput = (text, status) => {
+        const out = g("wb-output");
+        if (out) { out.className = "output-area"; out.textContent = text; updateMeta("wb-output", text); }
+        setStatus(status, "ok");
+      };
+      postJson("/api/yaml-to-json", { text })
+        .then((toJson) => {
+          if (!toJson.ok) return present(run, () => showError(toJson.error || "Invalid YAML."));
+          if (action === "Validate") return present(run, () => {
+            const out = g("wb-output"); if (out) { out.className = "output-area"; out.textContent = "Valid YAML."; }
+            setStatus("Valid YAML.", "ok");
+          });
+          return postJson("/api/json-to-yaml", { text: toJson.result }).then((toYaml) =>
+            present(run, () => {
+              if (!toYaml.ok) return showError(toYaml.error || "Error.");
+              showOutput(toYaml.result, "Formatted. (Comments and anchors are not preserved.)");
+            })
+          );
+        })
+        .catch(() => { if (run.id === _runSeq) setStatus("Network error.", "error"); })
+        .finally(() => { if (run.id === _runSeq) runBtn.disabled = false; });
       return;
     }
 
     if (fmt === "sql") {
       const cSel = g("opt-case"), iSel = g("opt-indent"), sc = g("opt-strip-comments");
-      safeApiFetch("/api/sql-format", {
+      runApi("/api/sql-format", {
         text, action: action === "Minify" ? "minify" : "format",
         keyword_case: cSel ? cSel.value : "upper",
         indent_width: iSel ? Number(iSel.value) : 2,
         strip_comments: action === "Minify" && sc ? sc.checked : false,
-      }).then((data) => {
-        if (!data) return;
+      }, (data) => {
         const out = g("wb-output"); if (!out) return;
         if (!data.ok) { out.className = "output-area has-error"; out.textContent = data.error || "Error."; setStatus(data.error || "Error.", "error"); return; }
         out.className = "output-area"; out.textContent = data.result; updateMeta("wb-output", data.result);
@@ -778,8 +976,7 @@
       return;
     }
     if (fmt === "xml") {
-      safeApiFetch("/api/xml-validate", { text }).then((data) => {
-        if (!data) return;
+      runApi("/api/xml-validate", { text }, (data) => {
         const o = g("wb-output"); if (!o) return;
         if (data.valid) {
           o.className = "output-area"; const ok = document.createElement("span"); ok.style.color = "var(--good)"; ok.textContent = "✓ Valid XML"; o.textContent = ""; o.appendChild(ok);
@@ -792,8 +989,7 @@
       }); return;
     }
     if (fmt === "yaml") {
-      safeApiFetch("/api/yaml-to-json", { text }).then((data) => {
-        if (!data) return;
+      runApi("/api/yaml-to-json", { text }, (data) => {
         const o = g("wb-output"); if (!o) return;
         if (data.ok) {
           o.className = "output-area"; const ok = document.createElement("span"); ok.style.color = "var(--good)"; ok.textContent = "✓ Valid YAML"; o.textContent = ""; o.appendChild(ok);
@@ -817,8 +1013,7 @@
       "csv-json":  { forward: "/api/csv-to-json",   reverse: "/api/json-to-csv" },
     };
     const endpoint = map[pair][dir === "forward" ? "forward" : "reverse"];
-    safeApiFetch(endpoint, { text }).then((data) => {
-      if (!data) return;
+    runApi(endpoint, { text }, (data) => {
       const o = g("wb-output"); if (!o) return;
       if (!data.ok) { o.className = "output-area has-error"; o.textContent = data.error || "Error."; setStatus(data.error || "Error.", "error"); return; }
       o.className = "output-area"; o.textContent = data.result; updateMeta("wb-output", data.result);
@@ -1034,24 +1229,35 @@
     } else if (fmt === "hash") {
       const text = g("wb-input") ? g("wb-input").value : "";
       if (!text) { setStatus("Enter some text first.", "neutral"); return; }
+      const run = currentRun;
       const bytes = new TextEncoder().encode(text);
-      out.textContent = "";
+      const rows = [];
       for (const { id, weak } of [{ id:"MD5",weak:true },{ id:"SHA-1",weak:true },{ id:"SHA-256",weak:false },{ id:"SHA-384",weak:false },{ id:"SHA-512",weak:false }]) {
         const hash = id === "MD5" ? md5(text) : await subtleHash(id, bytes);
-        const div = document.createElement("div");
-        const strong = document.createElement("strong"); strong.textContent = id;
-        div.appendChild(strong);
-        if (weak) { const badge = document.createElement("span"); badge.className = "badge weak"; badge.textContent = " weak"; div.appendChild(badge); }
-        div.appendChild(document.createTextNode(": " + hash));
-        out.appendChild(div);
+        rows.push({ id, weak, hash });
       }
-      setStatus("Generated.", "ok");
+      // The awaits above can outlive the view, so write only if still current.
+      present(run, () => {
+        const target = getOutputEl();
+        if (!target) return;
+        target.textContent = "";
+        rows.forEach(({ id, weak, hash }) => {
+          const div = document.createElement("div");
+          const strong = document.createElement("strong"); strong.textContent = id;
+          div.appendChild(strong);
+          if (weak) { const badge = document.createElement("span"); badge.className = "badge weak"; badge.textContent = " weak"; div.appendChild(badge); }
+          div.appendChild(document.createTextNode(": " + hash));
+          target.appendChild(div);
+        });
+        setStatus("Generated.", "ok");
+      });
     }
   }
 
   // ── Run dispatcher ────────────────────────────────────────────────────────
   function runAction(action) {
     wb.action = action;
+    startRun();   // every Run supersedes older in-flight responses
     if (wb.operation === "formatter")  return runFormatter(action);
     if (wb.operation === "validator")  return runValidator();
     if (wb.operation === "converter")  return runConverter();
@@ -1096,20 +1302,39 @@
   }
 
   // ── Selector change handlers ──────────────────────────────────────────────
-  opSelect.addEventListener("change", () => {
+  // Switches the view without losing text. The outgoing draft is saved first.
+  // If the incoming slot uses the same input box and has no text yet, the
+  // current text is carried over, so changing operation never empties the box.
+  // A slot that already has its own text keeps it.
+  function switchView(mutate) {
+    const prevEl  = getPrimaryInputEl();
+    const prevId  = prevEl ? prevEl.id : null;
+    const carry   = prevEl ? prevEl.value : "";
     saveState();
-    wb.operation = opSelect.value;
-    populateFormats();
-    populateActions();
+    mutate();
+    const nextEl = getPrimaryInputEl();
+    if (nextEl && nextEl.id === prevId && carry) {
+      const d = draftFor(currentSlot());
+      if (!d.a) d.a = carry;
+    }
     render();
+    schedulePersist();
+  }
+
+  opSelect.addEventListener("change", () => {
+    switchView(() => {
+      wb.operation = opSelect.value;
+      populateFormats();
+      populateActions();
+    });
     setStatus(`${OPS[wb.operation].label} · ${fmtLabel(wb.operation, wb.format)} — press Run or ⌘/Ctrl+Enter.`, "neutral");
   });
 
   formatSelect.addEventListener("change", () => {
-    saveState();
-    wb.format = formatSelect.value;
-    populateActions();
-    render();
+    switchView(() => {
+      wb.format = formatSelect.value;
+      populateActions();
+    });
   });
 
   actionSelect.addEventListener("change", () => { wb.action = actionSelect.value; });
@@ -1137,6 +1362,11 @@
     const o = document.createElement("option"); o.value = id; o.textContent = cfg.label;
     opSelect.appendChild(o);
   });
+
+  // ── Restore saved input drafts (same tab, survives refresh) ──────────────
+  if (draftStore) Object.assign(DRAFTS, draftStore.load());
+  updateDraftNote();
+  window.addEventListener("pagehide", flushPersist);
 
   // ── Deep link ────────────────────────────────────────────────────────────
   (function applyDeepLink() {

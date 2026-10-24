@@ -1,0 +1,60 @@
+{% extends "admin/layout.html" %}
+{% set section_title = "Overview" %}
+
+{% block admin_body %}
+<div class="admin-grid">
+  <section class="card kpi-card">
+    <h2>Queue</h2>
+    {% if queue %}
+    <ul class="kpi-list">
+      <li><span class="kpi-label">Pending</span><span class="kpi-value">{{ queue.pending }}</span></li>
+      <li><span class="kpi-label">In-flight (due now)</span><span class="kpi-value">{{ queue.in_flight }}</span></li>
+      <li><span class="kpi-label">Waiting to retry</span><span class="kpi-value">{{ queue.retrying }}</span></li>
+      <li><span class="kpi-label">Delivered</span><span class="kpi-value">{{ queue.delivered }}</span></li>
+      <li><span class="kpi-label">Dead-lettered</span><span class="kpi-value {{ 'bad' if queue.dead_lettered else '' }}">{{ queue.dead_lettered }}</span></li>
+      <li><span class="kpi-label">Oldest pending age</span><span class="kpi-value">{{ '%.0f'|format(queue.oldest_pending_age_seconds or 0) }}s</span></li>
+    </ul>
+    {% else %}
+    <p class="empty">Queue metrics unavailable.</p>
+    {% endif %}
+    <a href="{{ url_for('admin.queue_status') }}" class="btn ghost small">Queue detail →</a>
+  </section>
+
+  <section class="card kpi-card">
+    <h2>Last 24 hours</h2>
+    {% if kpi %}
+    <ul class="kpi-list">
+      <li><span class="kpi-label">Analytics events</span><span class="kpi-value">{{ kpi.events_24h }}</span></li>
+      <li><span class="kpi-label">Unique sessions</span><span class="kpi-value">{{ kpi.sessions_24h }}</span></li>
+      <li><span class="kpi-label">Active sessions</span><span class="kpi-value">{{ kpi.active_sessions_24h }}</span></li>
+      <li><span class="kpi-label">Open support tickets</span><span class="kpi-value {{ 'warn' if kpi.open_tickets else '' }}">{{ kpi.open_tickets }}</span></li>
+      <li><span class="kpi-label">New (untouched)</span><span class="kpi-value">{{ kpi.new_tickets }}</span></li>
+      <li><span class="kpi-label">Security events</span><span class="kpi-value {{ 'bad' if kpi.security_24h else '' }}">{{ kpi.security_24h }}</span></li>
+    </ul>
+    {% else %}
+    <p class="empty">Supabase is unreachable. KPIs will populate once the connection is restored.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Quick links</h2>
+    <nav class="admin-quicklinks">
+      <a href="{{ url_for('admin.support_inbox') }}">Support inbox</a>
+      <a href="{{ url_for('admin.traffic') }}">Traffic analytics</a>
+      <a href="{{ url_for('admin.tools') }}">Tool usage</a>
+      <a href="{{ url_for('admin.audit') }}">Audit log</a>
+      <a href="{{ url_for('admin.security') }}">Security events</a>
+      <a href="{{ url_for('admin.queue_status') }}">Queue status</a>
+    </nav>
+  </section>
+
+  <section class="card">
+    <h2>System notes</h2>
+    <ul class="notes-list">
+      <li>Supabase DSN is {{ 'configured' if supabase_configured else 'NOT configured — set DATABASE_URL' }}.</li>
+      <li>Supabase is {{ 'reachable' if supabase_reachable else 'unreachable (queued items are being held locally)' }}.</li>
+      <li>Analytics and contact submissions are queued durably in the local outbox. See <code>docs/supabase-retry-and-queue.md</code> for durability limitations on Render free tier.</li>
+    </ul>
+  </section>
+</div>
+{% endblock %}

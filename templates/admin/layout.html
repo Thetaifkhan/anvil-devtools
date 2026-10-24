@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Admin — {{ section_title|default("Dashboard") }} — Anvil{% endblock %}
+{% block head_extra %}<meta name="csrf-token" content="{{ csrf_token() }}">{% endblock %}
+
+{% block content %}
+<section class="admin-shell">
+  <aside class="admin-nav" aria-label="Admin sections">
+    <div class="admin-brand">⚒ Anvil Admin</div>
+    <a href="{{ url_for('admin.overview') }}" class="{{ 'active' if request.path == '/admin' or request.path == '/admin/' }}">Overview</a>
+    <a href="{{ url_for('admin.traffic') }}" class="{{ 'active' if '/admin/traffic' in request.path }}">Traffic</a>
+    <a href="{{ url_for('admin.engagement') }}" class="{{ 'active' if '/admin/engagement' in request.path }}">Engagement</a>
+    <a href="{{ url_for('admin.tools') }}" class="{{ 'active' if '/admin/tools' in request.path }}">Tool usage</a>
+    <a href="{{ url_for('admin.support_inbox') }}" class="{{ 'active' if '/admin/support' in request.path }}">Support inbox</a>
+    <a href="{{ url_for('admin.audit') }}" class="{{ 'active' if '/admin/audit' in request.path }}">Audit log</a>
+    <a href="{{ url_for('admin.security') }}" class="{{ 'active' if '/admin/security' in request.path }}">Security</a>
+    <a href="{{ url_for('admin.queue_status') }}" class="{{ 'active' if '/admin/queue' in request.path }}">Queue status</a>
+    <form method="post" action="{{ url_for('admin.logout') }}" class="admin-logout">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn ghost small">Sign out</button>
+    </form>
+  </aside>
+  <main class="admin-main">
+    <header class="admin-header">
+      <h1>{{ section_title|default("Overview") }}</h1>
+      <div class="admin-state">
+        {% if supabase_configured is defined %}
+          <span class="pill {{ 'ok' if supabase_reachable else 'bad' if supabase_configured else 'warn' }}">
+            {% if not supabase_configured %}Supabase not configured{% elif supabase_reachable %}Supabase online{% else %}Supabase unreachable{% endif %}
+          </span>
+        {% endif %}
+        {% if queue is defined and queue %}
+          <span class="pill {{ 'ok' if not queue.pending else 'warn' }}">{{ queue.pending }} queued</span>
+          {% if queue.dead_lettered %}<span class="pill bad">{{ queue.dead_lettered }} dead-lettered</span>{% endif %}
+        {% endif %}
+      </div>
+    </header>
+
+    {% block admin_body %}{% endblock %}
+  </main>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/admin.js') }}"></script>
+{% endblock %}

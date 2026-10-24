@@ -1,0 +1,66 @@
+{% extends "admin/layout.html" %}
+{% set section_title = "Submission detail" %}
+
+{% block admin_body %}
+{% if error %}
+<p class="empty">Could not load submission: {{ error }}</p>
+{% elif row %}
+<div class="admin-grid two-col">
+  <section class="card">
+    <h2>{{ row.subject }}</h2>
+    <dl class="meta-list">
+      <dt>Reference</dt><dd><code>{{ row.reference_code or '—' }}</code></dd>
+      <dt>Category</dt><dd>{{ row.category }}</dd>
+      <dt>Status</dt><dd><span class="pill status-{{ row.status }}">{{ row.status }}</span></dd>
+      <dt>Priority</dt><dd><span class="pill priority-{{ row.priority }}">{{ row.priority }}</span></dd>
+      <dt>From</dt><dd>{{ row.name or 'Anonymous' }}{% if row.email %} &lt;{{ row.email }}&gt;{% endif %}</dd>
+      <dt>Tool</dt><dd><code>{{ row.tool_slug or '—' }}</code></dd>
+      <dt>Page URL</dt><dd>{{ row.page_url or '—' }}</dd>
+      <dt>Consent</dt><dd>{{ row.consent_recorded_at.strftime('%Y-%m-%d %H:%M UTC') if row.consent_recorded_at else '—' }}</dd>
+      <dt>Created</dt><dd>{{ row.created_at.strftime('%Y-%m-%d %H:%M:%S UTC') if row.created_at else '—' }}</dd>
+      <dt>Updated</dt><dd>{{ row.updated_at.strftime('%Y-%m-%d %H:%M:%S UTC') if row.updated_at else '—' }}</dd>
+      <dt>Resolved</dt><dd>{{ row.resolved_at.strftime('%Y-%m-%d %H:%M:%S UTC') if row.resolved_at else '—' }}</dd>
+    </dl>
+  </section>
+
+  <section class="card">
+    <h2>Message</h2>
+    <pre class="message-body">{{ row.message }}</pre>
+    {% if row.browser_context %}
+    <h3>Browser context</h3>
+    <pre class="message-body small">{{ row.browser_context }}</pre>
+    {% endif %}
+  </section>
+</div>
+
+<form id="support-update-form" class="card" data-endpoint="{{ url_for('admin.support_update', submission_id=row.id) }}">
+  <h2>Admin actions</h2>
+  <div class="admin-grid two-col">
+    <label>Status:
+      <select name="status">
+        {% for s in ['new', 'in_progress', 'resolved', 'closed'] %}
+        <option value="{{ s }}" {{ 'selected' if row.status == s }}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Priority:
+      <select name="priority">
+        {% for p in ['low', 'normal', 'high'] %}
+        <option value="{{ p }}" {{ 'selected' if row.priority == p }}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <label>Admin notes:
+    <textarea name="admin_notes" rows="6" maxlength="8000">{{ row.admin_notes or '' }}</textarea>
+  </label>
+  <div class="contact-actions">
+    <button type="submit" class="btn primary">Save changes</button>
+    <span class="contact-status" role="status" aria-live="polite"></span>
+  </div>
+</form>
+{% else %}
+<p class="empty">Submission not found.</p>
+{% endif %}
+<p><a href="{{ url_for('admin.support_inbox') }}">← Back to inbox</a></p>
+{% endblock %}

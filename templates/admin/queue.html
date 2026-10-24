@@ -1,0 +1,146 @@
+{% extends "admin/layout.html" %}
+{% set section_title = "Queue status" %}
+
+{% block admin_body %}
+<section class="card">
+  <h2>Durable outbox</h2>
+  {% set q = queue %}
+  <div class="kpi-grid">
+    <div class="kpi-tile {{ 'warn' if q.pending > 0 else 'ok' }}">
+      <span class="kpi-tile-label">Pending</span>
+      <span class="kpi-tile-value">{{ q.pending }}</span>
+    </div>
+    <div class="kpi-tile">
+      <span class="kpi-tile-label">In-flight (due now)</span>
+      <span class="kpi-tile-value">{{ q.in_flight }}</span>
+    </div>
+    <div class="kpi-tile">
+      <span class="kpi-tile-label">Waiting to retry</span>
+      <span class="kpi-tile-value">{{ q.retrying }}</span>
+    </div>
+    <div class="kpi-tile ok">
+      <span class="kpi-tile-label">Delivered</span>
+      <span class="kpi-tile-value">{{ q.delivered }}</span>
+    </div>
+    <div class="kpi-tile {{ 'bad' if q.dead_lettered else '' }}">
+      <span class="kpi-tile-label">Dead-lettered</span>
+      <span class="kpi-tile-value">{{ q.dead_lettered }}</span>
+    </div>
+    <div class="kpi-tile">
+      <span class="kpi-tile-label">Contact pending</span>
+      <span class="kpi-tile-value">{{ q.contact_pending }}</span>
+    </div>
+    <div class="kpi-tile">
+      <span class="kpi-tile-label">Analytics pending</span>
+      <span class="kpi-tile-value">{{ q.analytics_pending }}</span>
+    </div>
+    <div class="kpi-tile">
+      <span class="kpi-tile-label">Oldest pending</span>
+      <span class="kpi-tile-value">{{ '%.0f'|format(q.oldest_pending_age_seconds or 0) }}s</span>
+    </div>
+    <div class="kpi-tile {{ 'bad' if q.saturation_alert else ('warn' if q.saturation_pct >= 50 else '') }}">
+      <span class="kpi-tile-label">Saturation</span>
+      <span class="kpi-tile-value">{{ q.saturation_pct }}%</span>
+    </div>
+  </div>
+
+  {% if q.saturation_alert %}
+  <div class="alert alert-warn" role="alert">
+    <strong>Queue saturation alert:</strong>
+    {{ q.pending }}/{{ q.max_items }} items pending ({{ q.saturation_pct }}%).
+    Contact submissions ({{ q.contact_pending }}) are always preserved.
+    Analytics events ({{ q.analytics_pending }}) will be evicted if the
+    queue fills. Investigate delivery failures or scale the worker.
+  </div>
+  {% endif %}
+
+  <p class="notes-list">
+    Supabase: <strong>{{ 'configured' if q.supabase_configured else 'NOT configured' }}</strong> ·
+    {{ 'reachable' if q.supabase_reachable else 'UNREACHABLE — items are being held locally and retried with exponential backoff' }}.<br>
+    Outbox durability:
+    {% if q.durable %}
+      <strong>durable</strong> (operator has opted in via OUTBOX_DURABLE=1).
+    {% else %}
+      <strong style="color: var(--bad);">best-effort</strong> (OUTBOX_DURABLE != 1).
+      Pending contact submissions WILL BE LOST on instance replacement.
+      Set OUTBOX_DURABLE=1 ONLY after mounting a persistent disk at SUPABASE_QUEUE_PATH.
+    {% endif %}
+    · Worker thread: {{ 'running' if q.worker_running else ('disabled (SUPABASE_WORKER_ENABLED=0)' if not q.worker_enabled else 'NOT running') }}.
+    See <code>docs/supabase-retry-and-queue.md</code> for the durability contract.
+  </p>
+</section>
+
+{% if dead_lettered %}
+<section class="card">
+  <h2>Dead-lettered items <span class="pill bad">{{ dead_lettered|length }}</span></h2>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Type</th>
+        <th>Reason</th>
+        <th>Last error</th>
+        <th>Attempts</th>
+        <th>Created</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in dead_lettered %}
+      <tr>
+        <td>{{ item.id }}</td>
+        <td><code>{{ item.event_type }}</code></td>
+        <td>{{ item.last_error_code or '—' }}</td>
+        <td>{{ (item.last_error_msg or '')[:120] }}</td>
+        <td>{{ item.attempt_count }}</td>
+        <td>{{ item.created_at|round(0)|int }}s ago</td>
+        <td>
+          <form method="post" action="{{ url_for('admin.queue_retry', item_id=item.id) }}" class="inline-form"
+                data-confirm="Requeue this dead-lettered item for retry?">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn primary small">Requeue</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Recent activity</h2>
+  {% if rows %}
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Type</th>
+        <th>Status</th>
+        <th>Attempts</th>
+        <th>Created</th>
+        <th>Last error</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in rows %}
+      <tr>
+        <td>{{ item.id }}</td>
+        <td><code>{{ item.event_type }}</code></td>
+        <td>
+          {% if item.delivered_at %}<span class="pill ok">delivered</span>
+          {% elif item.dead_lettered_at %}<span class="pill bad">dead-letter</span>
+          {% else %}<span class="pill warn">pending</span>{% endif %}
+        </td>
+        <td>{{ item.attempt_count }}</td>
+        <td>{{ item.created_at|round(0)|int }}s ago</td>
+        <td>{{ (item.last_error_msg or '')[:120] or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No items have flowed through the queue yet.</p>
+  {% endif %}
+</section>
+{% endblock %}
