@@ -1,3 +1,7 @@
 # Developer and test dependencies.
 -r requirements.txt
 pytest==9.1.1
+# pglast is a Python binding around the real PostgreSQL parser
+# (libpg_query). It's used by tests/test_migrations_pg.py to validate
+# that every migration file parses syntactically as PostgreSQL.
+pglast==8.7

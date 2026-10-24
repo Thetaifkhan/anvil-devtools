@@ -1,12 +1,15 @@
 import os
 
-from flask import Flask, render_template, request, send_from_directory, Response
+from flask import Flask, render_template, request, send_from_directory, Response, jsonify
 
 from config import Config
 from xml.sax.saxutils import escape as xml_escape
 from tool_registry import TOOLS, workbench_supports
 from routes.pages import pages_bp
 from routes.convert_tools import convert_bp
+from routes.contact import contact_bp
+from routes.analytics import analytics_bp
+from routes.admin import admin_bp
 
 
 def create_app(test_config=None):
@@ -14,6 +17,13 @@ def create_app(test_config=None):
     app.config.from_object(Config)
     if test_config:
         app.config.update(test_config)
+
+    # Session cookies carry the admin session. Mark them Secure whenever the
+    # canonical site is HTTPS so they are never sent over plaintext HTTP.
+    # The explicit SITE_URL is used rather than request.is_secure, because a
+    # TLS-terminating proxy hides the scheme from WSGI.
+    if str(app.config.get("SITE_URL", "")).lower().startswith("https://"):
+        app.config["SESSION_COOKIE_SECURE"] = True
 
     has_explicit_secret = bool(test_config and test_config.get("SECRET_KEY")) or bool(
         app.config.get("SECRET_KEY_CONFIGURED")
@@ -71,11 +81,48 @@ def create_app(test_config=None):
 
     app.register_blueprint(pages_bp)
     app.register_blueprint(convert_bp)
+    app.register_blueprint(contact_bp)
+    app.register_blueprint(analytics_bp)
+    app.register_blueprint(admin_bp)
+
+    # Configure the durable outbox ONCE per process boot. Tests that
+    # override the path do so BEFORE calling create_app() so this call
+    # is a no-op for them (the path is already set). For production this
+    # is the only call that matters — every request inherits the
+    # already-configured path.
+    from delivery.outbox import configure as configure_outbox
+    from delivery import outbox as _outbox_mod
+    if _outbox_mod.get_db_path_safe() is None:
+        configure_outbox()
+
+    # Start the queue worker thread ONCE per process boot. We must NOT
+    # call this from a per-request hook — that would attempt to start
+    # the thread on every request (even though start_worker() is
+    # idempotent, the call itself is wasteful and would also race with
+    # gunicorn's multi-process model).
+    #
+    # ``start_worker()`` is a no-op when ``SUPABASE_WORKER_ENABLED=0``.
+    # The recommended production topology is to set that env var to 0
+    # on the web service and run a separate Background Worker via
+    # ``python -m delivery.worker_cli``. See RENDER_DEPLOYMENT.md.
+    #
+    # Skip in TESTING mode so unit tests don't accumulate worker threads.
+    # Tests that need the worker set SUPABASE_WORKER_ENABLED=1 and call
+    # start_worker() explicitly.
+    is_testing = bool(test_config and test_config.get("TESTING"))
+    if not is_testing:
+        from delivery.worker import start_worker
+        start_worker()
 
     @app.context_processor
     def inject_globals():
         from datetime import datetime, timezone
         return {"current_year": datetime.now(timezone.utc).year, "workbench_supports": workbench_supports}
+
+    @app.context_processor
+    def inject_csrf():
+        from auth import admin as _auth_admin
+        return {"csrf_token": _auth_admin.csrf_token}
 
     @app.context_processor
     def inject_tool_index():
@@ -99,10 +146,14 @@ def create_app(test_config=None):
 
     @app.errorhandler(404)
     def not_found(e):
+        if request.path.startswith("/api/"):
+            return jsonify({"ok": False, "error": "Not found."}), 404
         return render_template("errors/404.html"), 404
 
     @app.errorhandler(500)
     def server_error(e):
+        if request.path.startswith("/api/"):
+            return jsonify({"ok": False, "error": "An unexpected error occurred."}), 500
         return render_template("errors/500.html"), 500
 
     @app.errorhandler(413)
@@ -113,8 +164,25 @@ def create_app(test_config=None):
 
     @app.get("/healthz")
     def healthz():
-        """Liveness probe for container orchestrators. Reveals nothing about config."""
+        """Liveness probe for container orchestrators.
+
+        Reveals only whether the app is alive — never config details or DB
+        connectivity (use /admin/queue for that, behind auth)."""
         return {"ok": True}
+
+    @app.get("/api/admin/healthz")
+    def admin_healthz():
+        """Admin-facing readiness probe — requires admin auth.
+
+        Returns connectivity + queue status so an operator can decide
+        whether the deployment is ready. Lives under /api/admin/* so it's
+        covered by the same auth decorator as the dashboard.
+        """
+        from auth import admin as auth_admin
+        if not auth_admin.current_admin_user_id():
+            return jsonify({"ok": False, "error": "auth required"}), 401
+        from delivery.worker import status_snapshot
+        return jsonify({"ok": True, "queue": status_snapshot()})
 
     @app.get("/robots.txt")
     def robots():
@@ -153,6 +221,15 @@ def create_app(test_config=None):
     return app
 
 
+# The module-level ``app = create_app()`` line is required so that
+# gunicorn can target ``app:app``. We DO want the worker to start in
+# production (where SUPABASE_WORKER_ENABLED is set), but we don't want
+# it to start in tests. Tests typically import create_app rather than
+# the module-level ``app`` object, so we gate the worker-thread
+# startup on the env var here too — start_worker() is a no-op when
+# SUPABASE_WORKER_ENABLED=0 (the default in tests and in the
+# recommended production topology where a separate Background Worker
+# runs the delivery loop).
 app = create_app()
 
 if __name__ == "__main__":

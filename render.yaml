@@ -1,0 +1,162 @@
+# Render Blueprint for Anvil DevTools.
+# https://render.com/docs/blueprint-spec
+#
+# After the first deploy, fill in the secrets (DATABASE_URL,
+# SUPABASE_SERVICE_ROLE_KEY, IP_HMAC_SECRET, SECRET_KEY, etc.) via the
+# Render dashboard. They MUST NOT be committed to this file.
+
+services:
+  # ── Web service (Flask app) ───────────────────────────────────────────────
+  # Serves the public site, /api/contact, /api/analytics/*, and /admin/*.
+  # The in-process delivery worker is DISABLED here — a dedicated
+  # Background Worker (below) handles queue delivery so we never start
+  # multiple worker threads competing on the same SQLite outbox.
+  - type: web
+    name: anvil-devtools
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: WEB_CONCURRENCY
+        value: "1"   # Single gunicorn worker. Scale horizontally if needed.
+      - key: FLASK_ENV
+        value: production
+      - key: FLASK_DEBUG
+        value: "0"
+      - key: SECRET_KEY
+        sync: false  # Required — set via dashboard.
+      - key: SITE_URL
+        sync: false  # Required — set via dashboard.
+      - key: DATABASE_URL
+        sync: false  # Required — set via dashboard.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: IP_HMAC_SECRET
+        sync: false
+      - key: SUPABASE_CONNECT_TIMEOUT
+        value: "5"
+      - key: SUPABASE_STATEMENT_TIMEOUT
+        value: "10"
+      - key: SUPABASE_RETRY_BASE_DELAY_SECONDS
+        value: "2"
+      - key: SUPABASE_RETRY_MAX_DELAY_SECONDS
+        value: "900"
+      # SUPABASE_QUEUE_PATH: SQLite path. On Render free tier /tmp is
+      # ephemeral — set OUTBOX_DURABLE=0 (the default) so the contact
+      # form honestly tells users the submission is best-effort. For
+      # true durability, upgrade to a paid plan with a persistent disk
+      # and set OUTBOX_DURABLE=1 after mounting the disk here.
+      - key: SUPABASE_SSL_ROOT_CERT
+        value: /etc/secrets/supabase-ca.crt   # Upload Supabase's root CA as a Render Secret File
+      - key: TRUSTED_PROXY_COUNT
+        value: "1"   # Render appends the client IP to X-Forwarded-For
+      - key: SUPABASE_QUEUE_LEASE_SECONDS
+        value: "300"
+      - key: SUPABASE_QUEUE_PATH
+        value: /tmp/anvil-outbox.sqlite3
+      - key: OUTBOX_DURABLE
+        value: "0"
+      # Worker is DISABLED on the web service — the Background Worker
+      # below runs the delivery loop. This avoids duplicate workers
+      # competing on the SQLite outbox.
+      # The delivery worker runs IN-PROCESS on this single web instance. The
+      # SQLite outbox lives on this service's disk, and a separate Background
+      # Worker cannot read it (services do not share a filesystem). With "0"
+      # (the previous default) NOTHING delivered queued submissions to Supabase.
+      # Keep WEB_CONCURRENCY=1 and a single instance so exactly one worker runs.
+      - key: SUPABASE_WORKER_ENABLED
+        value: "1"
+      - key: SUPABASE_MAX_QUEUE_ITEMS
+        value: "10000"
+      # Default 0 = pruning DISABLED (long-term retention preferred).
+      # Set to a positive integer to enable pruning of pending analytics
+      # events older than that many days. Contact submissions are NEVER
+      # pruned regardless of this setting.
+      - key: SUPABASE_QUEUE_ANALYTICS_MAX_AGE_DAYS
+        value: "0"
+      # Saturation alerting. When pending items reach 80% of
+      # SUPABASE_MAX_QUEUE_ITEMS, the worker logs a WARNING every 15
+      # minutes and the /admin/queue dashboard surfaces an alert.
+      - key: SUPABASE_QUEUE_SATURATION_ALERT_PCT
+        value: "80"
+      - key: SUPABASE_QUEUE_SATURATION_ALERT_COOLDOWN_MIN
+        value: "15"
+
+  # ── Background Worker (queue delivery) ────────────────────────────────────
+  # Runs the durable delivery loop as a single process.
+  #
+  # IMPORTANT: Two separate Render services DO NOT share a filesystem.
+  # The web service and this Background Worker each get their own
+  # ephemeral /tmp. Setting SUPABASE_QUEUE_PATH to the same value on
+  # both services does NOT make them share the queue file — each
+  # service gets its own copy at that path.
+  #
+  # To actually share durable queue state between the web service and
+  # the Background Worker, you MUST use ONE of:
+  #
+  #   1. Mount a persistent disk on the web service ONLY and run the
+  #      in-process worker there (SUPABASE_WORKER_ENABLED=1 on the web
+  #      service, no Background Worker needed). This is Option A in
+  #      docs/supabase-retry-and-queue.md.
+  #
+  #   2. Replace the SQLite outbox with an external durable queue
+  #      (Redis, SQS, Cloud Tasks). This is Option B1 in the docs.
+  #
+  # The block below is commented out because Option A (in-process
+  # worker on the web service) is simpler and works without an
+  # external queue backend. Uncomment ONLY if you have set up an
+  # external queue per Option B1.
+  #
+  # - type: worker
+  #   name: anvil-delivery-worker
+  #   runtime: docker
+  #   plan: starter   # Background Workers require a paid plan
+  #   dockerfilePath: ./Dockerfile
+  #   dockerCommand: python -m delivery.worker_cli --batch 10 --interval 5
+  #   envVars:
+  #     - key: SECRET_KEY
+  #       sync: false
+  #     - key: DATABASE_URL
+  #       sync: false
+  #     - key: SUPABASE_SERVICE_ROLE_KEY
+  #       sync: false
+  #     # The external queue URL (Redis, SQS, etc.). The web service
+  #     # must connect to the SAME URL.
+  #     # - key: REDIS_URL
+  #     #   sync: false
+  #     - key: SUPABASE_WORKER_ENABLED
+  #       value: "1"
+  #     - key: SUPABASE_RETRY_BASE_DELAY_SECONDS
+  #       value: "2"
+  #     - key: SUPABASE_RETRY_MAX_DELAY_SECONDS
+  #       value: "900"
+
+  # ── Optional daily backup cron job. See docs/backup-and-recovery.md. ──────
+  # Uncomment and fill in the secrets to enable.
+  #
+  # - type: cron
+  #   name: anvil-backup
+  #   runtime: docker
+  #   plan: starter
+  #   schedule: "0 3 * * *"   # 03:00 UTC daily
+  #   dockerfilePath: ./Dockerfile
+  #   envVars:
+  #     - key: DATABASE_URL
+  #       sync: false
+  #     - key: AWS_ACCESS_KEY_ID
+  #       sync: false
+  #     - key: AWS_SECRET_ACCESS_KEY
+  #       sync: false
+  #     - key: BACKUP_S3_BUCKET
+  #       sync: false
+  #     - key: BACKUP_GPG_PASSPHRASE
+  #       sync: false
+  #   dockerCommand: /bin/sh -c "pip install awscli && ./scripts/backup-database.sh"

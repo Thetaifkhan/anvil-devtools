@@ -13,6 +13,17 @@ class Config:
     ENV = os.environ.get("FLASK_ENV", "production")
     DEBUG = os.environ.get("FLASK_DEBUG", "0") == "1"
 
+    # Flask session cookies (used by the admin dashboard auth). The cookie
+    # is signed by SECRET_KEY, never encrypted, so the secret must be
+    # high-entropy. SESSION_COOKIE_SAMESITE defaults to lax which protects
+    # against most CSRF vectors; we set the rest explicitly below.
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "Lax"
+    # Render terminates TLS at the platform; Flask sees HTTP. We use the
+    # SITE_URL check to decide HSTS in app.py and rely on the platform
+    # for the actual cookie transport. SESSION_COOKIE_SECURE is set at
+    # runtime in app.py based on the same check.
+
     # Never accept a missing, known-placeholder, or short signing key from the
     # environment. The random fallback is safe for local use but changes on each
     # process start, so production deployments must configure a stable secret.

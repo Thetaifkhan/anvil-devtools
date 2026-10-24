@@ -99,30 +99,82 @@ anvil-devtools/
 ├── app.py                 # App factory, security headers, error pages, sitemap, /healthz
 ├── config.py              # Environment-driven configuration
 ├── tool_registry.py       # Single source of truth for every tool's metadata
+├── supabase_client.py     # Postgres connection module (TLS, timeouts, dict cursors)
 ├── routes/
 │   ├── pages.py           # Home, tool pages, static pages
-│   └── convert_tools.py   # /api/* endpoints for server-side conversions
+│   ├── convert_tools.py   # /api/* endpoints for server-side conversions
+│   ├── contact.py         # /contact + /api/contact
+│   ├── analytics.py       # /api/analytics/event + /api/analytics/session
+│   └── admin.py           # /admin/* dashboard (overview, traffic, support, audit, queue)
 ├── services/
 │   ├── conversion_service.py  # JSON, XML, YAML and CSV logic
 │   ├── sql_service.py         # SQL formatting
-│   └── errors.py              # ToolError (user-facing errors)
-├── templates/             # Jinja templates (base, tool pages, static pages, errors)
+│   ├── errors.py              # ToolError (user-facing errors)
+│   ├── contact_service.py     # Contact form validation + reference codes
+│   └── rate_limit.py          # Per-process sliding-window rate limiters
+├── analytics/             # Privacy-preserving visitor analytics
+│   └── tracking.py        # IP HMAC, payload sanitization, session validation
+├── auth/                  # Admin authentication (Supabase JWT verification)
+│   └── admin.py           # require_admin decorator, is_user_admin lookup
+├── delivery/              # Durable outbox + retry worker
+│   ├── outbox.py          # SQLite durable queue (idempotency, dead-letter)
+│   ├── worker.py          # Background retry worker (exponential backoff + jitter)
+│   ├── errors.py          # Error classification + backoff computation
+│   └── worker_cli.py      # Standalone worker entrypoint (Render Background Worker)
+├── migrations/            # SQL migrations applied manually (see RENDER_DEPLOYMENT.md)
+│   ├── 001_schema_verification.sql
+│   ├── 002_missing_constraints_and_indexes.sql
+│   ├── 003_retry_queue_idempotency.sql
+│   └── 004_admin_analytics_support.sql
+├── templates/             # Jinja templates (base, tool pages, contact, admin/*, errors)
 ├── static/
 │   ├── css/main.css       # Design system
-│   ├── js/                # Shared helpers, per-tool logic, service worker
+│   ├── css/admin.css      # Admin dashboard styles
+│   ├── js/                # Shared helpers, per-tool logic, analytics.js, contact.js, admin.js
 │   └── icons/, manifest.webmanifest
-├── tests/                 # pytest suite, plus Node tests in tests/js
+├── docs/
+│   ├── analytics-and-privacy.md
+│   ├── backup-and-recovery.md
+│   └── supabase-retry-and-queue.md
+├── tests/                 # pytest suite (421 tests) + Node tests (22 tests)
 ├── Dockerfile
+├── render.yaml            # Render Blueprint (see RENDER_DEPLOYMENT.md)
 └── .github/workflows/     # ci.yml (checks) and docker.yml (image publish)
 ```
+
+## Analytics, contact, and admin
+
+The application includes a privacy-preserving analytics system, a polished
+contact form with durable delivery, and an admin dashboard.
+
+- **Analytics** — first-party session IDs, IP addresses pseudonymized
+  via HMAC-SHA256 (never stored raw), no tool input/output collected.
+  See `docs/analytics-and-privacy.md`.
+- **Contact form** — at `/contact`, queues submissions to a durable
+  SQLite outbox. Returns a reference code immediately; the worker
+  delivers to Supabase asynchronously with exponential backoff.
+- **Admin dashboard** — at `/admin/*` behind Supabase JWT auth +
+  `private.is_admin()` lookup. Shows queue status, support inbox,
+  audit log, security events, and traffic/engagement/tool-usage analytics.
+- **Durable outbox** — survives Supabase pauses and process restarts
+  within an instance. See `docs/supabase-retry-and-queue.md` for the
+  Render deployment caveats and production upgrade path.
+- **Backups** — Supabase free tier provides daily snapshots (7-day
+  retention, no PITR). See `docs/backup-and-recovery.md` for the
+  independent off-site backup strategy.
 
 ## Tests
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest tests/ -v          # 235 tests
-node --test tests/js/*.test.cjs     # 4 worker tests
+python -m pytest tests/ -v          # server tests; browser tests skip without Playwright + Chromium
+node --test tests/js/*.test.cjs     # worker and draft-storage unit tests
 ```
+
+The Workbench browser tests (`tests/test_workbench_browser.py`) drive the page in
+headless Chromium. They run when Playwright and a Chromium build are installed
+(`pip install playwright && playwright install chromium`, or set
+`ANVIL_CHROMIUM=/path/to/chromium`). Otherwise they are skipped, not failed.
 
 For end-to-end smoke and headless-Chromium render checks (requires
 `pip install playwright && playwright install chromium`):
@@ -153,6 +205,7 @@ The homepage, search, sitemap, and navigation pick up the new tool from the regi
 - Responses include a Content Security Policy, frame restrictions, MIME-sniffing protection, a strict referrer policy, and a permissions policy.
 - Password and UUID generation use `crypto` APIs, not `Math.random()`.
 - The JWT decoder shows the decoded header, payload, and raw signature. It never verifies signatures, and the page says so.
+- Workbench input drafts are kept in `sessionStorage`, so they survive a refresh in the same tab and are discarded when the tab closes. Only typed input is stored, never results, and the JWT box is never stored. The Workbench notice explains this, and "Clear saved drafts" removes them at any time. Drafts never leave the browser.
 
 See `AUDIT_REPORT.md` for the audit history, verification results, and open risks.
 

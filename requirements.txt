@@ -4,3 +4,12 @@ PyYAML==6.0.3
 sqlparse==0.6.0
 lxml==6.1.3
 gunicorn==26.2.0
+
+# Supabase / PostgreSQL integration.
+# psycopg 3 gives us a real driver for direct Postgres connections with TLS,
+# statement_timeout, connect_timeout, and FOR UPDATE SKIP LOCKED queue claiming.
+psycopg[binary]==3.2.3
+
+# Used only for Supabase Auth REST calls (JWT verification, user lookup).
+# Already a transitive dep of many stacks, pinned explicitly here.
+requests==2.33.0
