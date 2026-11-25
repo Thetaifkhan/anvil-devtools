@@ -510,7 +510,7 @@ input, textarea, select { max-width: 100%; }
 .panel:focus-within { border-color: var(--primary); box-shadow: var(--glow); }
 /* Output panels: keep the Copy/Download toolbar pinned under the site header
    while the result is scrolled. */
-.panel:has(.output-area) > .panel-head {
+.panel:has(> .output-area) > .panel-head {
   position: sticky; top: calc(var(--header-h) + .5rem); z-index: 2;
 }
 .panel-head {
@@ -524,27 +524,6 @@ input, textarea, select { max-width: 100%; }
 }
 .panel textarea:focus { outline: none; }
 .panel .output-area { white-space: pre-wrap; word-break: break-word; overflow: auto; }
-
-/* Output box: fixed, scrollable window. It never grows with the content,
-   so long results scroll inside the box instead of stretching the page. */
-.panel .output-frame {
-  position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
-}
-.panel .output-frame > .output-area {
-  flex: none; width: 100%; height: 24rem; max-height: 65vh; min-height: 220px;
-  overflow: auto; overscroll-behavior: contain; padding-right: 3rem;
-  scrollbar-gutter: stable;
-}
-/* Copy icon sits OUTSIDE the scrolling box, so it stays visible while scrolling. */
-.output-copy-icon {
-  position: absolute; top: .5rem; right: .5rem; z-index: 3;
-  width: 2rem; height: 2rem; display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid var(--border); border-radius: var(--radius-sm);
-  background: var(--bg-raised); color: var(--text-dim); cursor: pointer;
-}
-.output-copy-icon:hover { color: var(--text); border-color: var(--text-faint); background: var(--bg-hover); }
-.output-copy-icon:focus-visible { box-shadow: var(--glow); outline: none; }
-.output-copy-icon.copied { color: var(--good); border-color: var(--good); }
 .panel .output-area.has-error { color: var(--bad); }
 
 .btn-row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
