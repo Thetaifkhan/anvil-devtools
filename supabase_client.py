@@ -30,7 +30,6 @@ from typing import Iterator, Optional
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 import psycopg
-from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 log = logging.getLogger("anvil.supabase")
@@ -128,7 +127,6 @@ def _get_pool() -> ConnectionPool:
                         "connect_timeout": _int_env("SUPABASE_CONNECT_TIMEOUT", 5, 1, 60),
                         "application_name": "anvil-devtools",
                         "options": f"-c statement_timeout={statement_ms}",
-                        "row_factory": dict_row,
                     },
                 )
     return _ENGINE
@@ -139,7 +137,7 @@ def cursor() -> Iterator[psycopg.Cursor]:
     """Borrow a pooled connection, yield a cursor, commit on success.
 
     The pool rolls back on error and returns the connection for reuse.
-    Rows come back as dicts, so use ``row["column"]``.
+    Rows come back as tuples, so use ``row[0]``, ``row[1]`` and so on.
     """
     with _get_pool().connection() as conn:
         with conn.cursor() as cur:
@@ -152,9 +150,9 @@ def ping() -> bool:
         return False
     try:
         with cursor() as cur:
-            cur.execute("SELECT 1 AS ok")
+            cur.execute("SELECT 1")
             row = cur.fetchone()
-            return bool(row and row["ok"] == 1)
+            return bool(row and row[0] == 1)
     except Exception as exc:
         log.warning("Supabase ping failed: %s", exc)
         return False
