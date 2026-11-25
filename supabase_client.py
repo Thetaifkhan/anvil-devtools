@@ -1,23 +1,28 @@
-"""Simple Supabase (Postgres) connection helper.
+"""Supabase / PostgreSQL connection module.
 
-How it works
+Design notes
 ------------
-* Build one connection string (DSN) from environment variables.
-* Open a fresh connection for each piece of work, and close it when done.
-  No caching, threads or locks to get wrong.
-* TLS is always verified (``sslmode=verify-full``). Weaker modes are refused.
+- Uses ``psycopg`` (v3) for direct Postgres access. This gives us real TLS,
+  ``connect_timeout`` and ``statement_timeout`` support, and the
+  ``FOR UPDATE SKIP LOCKED`` syntax required by the durable queue.
+- ``DATABASE_URL`` wins over the per-part environment variables.
+- Passwords are URL-encoded with ``urllib.parse.quote`` rather than
+  concatenated raw.
+- A connection is opened lazily on first use and recreated on failure.
+  The pool is intentionally a per-process cache of one connection because
+  Supabase's free-tier Postgres limits the number of concurrent connections.
+- Transient vs permanent errors are classified by :mod:`delivery.errors` so the
+  retry worker can decide whether to retry, back off, or dead-letter.
 
-Environment variables (use ONE of the two options)
---------------------------------------------------
-1. DATABASE_URL=postgresql://user:password@host:5432/postgres
-   (password must be URL-encoded)
-2. SUPABASE_DB_PASSWORD=...  plus optional SUPABASE_DB_HOST, SUPABASE_DB_USER,
-   SUPABASE_DB_NAME, SUPABASE_DB_PORT
-
-Optional:
-   SUPABASE_SSL_ROOT_CERT=/path/to/supabase-ca.crt
-   SUPABASE_CONNECT_TIMEOUT=5
-   SUPABASE_STATEMENT_TIMEOUT=10
+Security
+--------
+- ``sslmode=verify-full`` is the default. Unverified modes (``require``,
+  ``prefer``, ``allow``, ``disable``) are refused, not downgraded to,
+  because ``require`` encrypts without checking the server certificate.
+  Set ``SUPABASE_SSL_ROOT_CERT`` to Supabase's root CA file.
+- The service-role key is held only in process memory and is never logged
+  or shipped to the browser. Templates and API responses receive no
+  Supabase credentials.
 """
 
 from __future__ import annotations
@@ -26,52 +31,94 @@ import logging
 import os
 import threading
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Iterator, Optional
-from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote as url_quote, urlencode, urlsplit, urlunsplit
 
 import psycopg
-from psycopg.rows import dict_row
-from psycopg_pool import ConnectionPool
 
 log = logging.getLogger("anvil.supabase")
 
-# Kept as module attributes because delivery/worker.py resets them after fork().
+# ── Module-level state ──────────────────────────────────────────────────────
+
 _LOCK = threading.Lock()
-_ENGINE = None
+_ENGINE: Optional["_Engine"] = None
 
-_DEFAULT_HOST = "db.iiaalcfzqqkzxcnmnedt.supabase.co"
-_VERIFY_MODE = "verify-full"
-_REFUSED_SSLMODES = {"disable", "allow", "prefer", "require", "verify-ca"}
+_DEFAULTS = {
+    "SUPABASE_CONNECT_TIMEOUT": "5",
+    "SUPABASE_STATEMENT_TIMEOUT": "10",
+}
 
 
-def _int_env(name: str, default: int, low: int, high: int) -> int:
-    try:
-        value = int(os.environ.get(name, default))
-    except ValueError:
-        value = default
-    return max(low, min(value, high))
+@dataclass(frozen=True)
+class SupabaseConfig:
+    """Resolved configuration derived from environment variables."""
+
+    database_url: Optional[str]
+    supabase_url: Optional[str]
+    anon_key: Optional[str]
+    service_role_key: Optional[str]
+    connect_timeout_seconds: int
+    statement_timeout_seconds: int
+    enabled: bool  # True only when a usable DSN is present
+
+    def safe_summary(self) -> dict:
+        """A safe-to-log snapshot of the configuration (no secrets)."""
+        return {
+            "has_database_url": bool(self.database_url),
+            "supabase_url": self.supabase_url or "",
+            "connect_timeout_seconds": self.connect_timeout_seconds,
+            "statement_timeout_seconds": self.statement_timeout_seconds,
+            "enabled": self.enabled,
+        }
+
+
+# sslmodes that encrypt but do NOT verify the server certificate (libpq
+# documents ``require`` as encryption-only unless a root CA file is present).
+# These are refused, not silently upgraded, so the operator sees the problem.
+_UNVERIFIED_SSLMODES = {"disable", "allow", "prefer", "require"}
+_VERIFYING_SSLMODES = {"verify-full", "verify-ca"}
+
+_DEFAULT_SUPABASE_DB_HOST = "db.iiaalcfzqqkzxcnmnedt.supabase.co"
 
 
 def _secure_dsn(dsn: str, root_cert: Optional[str]) -> Optional[str]:
-    """Force certificate verification on a DSN. Returns None if it must be refused."""
+    """Return ``dsn`` with certificate verification enforced, or None.
+
+    * ``sslmode`` defaults to ``verify-full`` (certificate AND hostname).
+    * An explicit unverified mode (``require``/``prefer``/``allow``/
+      ``disable``) is REFUSED: the connection is treated as unconfigured
+      and an error is logged. We never downgrade a request to get it to
+      connect, per the production TLS requirement.
+    * ``SUPABASE_SSL_ROOT_CERT`` (path to Supabase's root CA) is added as
+      ``sslrootcert``. A configured path that does not exist also fails
+      closed, because connecting without the intended CA would fall back
+      to a different trust store.
+    """
     parts = urlsplit(dsn)
     query = dict(parse_qsl(parts.query, keep_blank_values=True))
     requested = query.get("sslmode", "").strip().lower()
 
-    if requested and requested != _VERIFY_MODE:
+    if requested in _UNVERIFIED_SSLMODES:
         log.error(
-            "Database connection refused: sslmode=%s does not fully verify the "
-            "server. Use sslmode=verify-full.", requested,
+            "Refusing database connection: sslmode=%s does not verify the "
+            "server certificate. Use sslmode=verify-full (and set "
+            "SUPABASE_SSL_ROOT_CERT to Supabase's root CA).", requested,
         )
         return None
+    if requested and requested not in _VERIFYING_SSLMODES:
+        log.error("Refusing database connection: unknown sslmode=%r.", requested)
+        return None
+    if requested == "verify-ca":
+        log.warning("sslmode=verify-ca does not check the hostname; verify-full is preferred.")
 
-    query["sslmode"] = _VERIFY_MODE
+    query["sslmode"] = requested or "verify-full"
+
     if root_cert:
         if not os.path.isfile(root_cert):
             log.error(
-                "Database connection refused: SUPABASE_SSL_ROOT_CERT=%s does not "
-                "exist. Upload the Supabase CA certificate to that path (on Render: "
-                "Secret Files).", root_cert,
+                "SUPABASE_SSL_ROOT_CERT points to a missing file; refusing to "
+                "connect without the configured CA."
             )
             return None
         query.setdefault("sslrootcert", root_cert)
@@ -80,7 +127,13 @@ def _secure_dsn(dsn: str, root_cert: Optional[str]) -> Optional[str]:
 
 
 def _build_dsn() -> Optional[str]:
-    """Return a verified DSN from the environment, or None if not configured."""
+    """Build a verified Postgres DSN from env vars, preferring ``DATABASE_URL``.
+
+    Per-part variables (host, port, user, db name, password) follow the
+    Supabase project layout. The password is URL-encoded so special
+    characters in it cannot break the URI. Every returned DSN has
+    certificate verification enforced (see :func:`_secure_dsn`).
+    """
     root_cert = os.environ.get("SUPABASE_SSL_ROOT_CERT", "").strip() or None
 
     raw = os.environ.get("DATABASE_URL", "").strip()
@@ -91,79 +144,208 @@ def _build_dsn() -> Optional[str]:
     if not password:
         return None
 
-    host = os.environ.get("SUPABASE_DB_HOST", "").strip() or _DEFAULT_HOST
-    port = os.environ.get("SUPABASE_DB_PORT", "5432").strip()
-    user = os.environ.get("SUPABASE_DB_USER", "postgres").strip()
-    dbname = os.environ.get("SUPABASE_DB_NAME", "postgres").strip()
+    host = os.environ.get("SUPABASE_DB_HOST", "").strip() or _DEFAULT_SUPABASE_DB_HOST
+    port = os.environ.get("SUPABASE_DB_PORT", "5432")
+    user = os.environ.get("SUPABASE_DB_USER", "postgres")
+    dbname = os.environ.get("SUPABASE_DB_NAME", "postgres")
 
-    dsn = f"postgresql://{user}:{quote(password, safe='')}@{host}:{port}/{dbname}"
+    # URL-encode the password — it's the only part that may legally contain
+    # reserved characters such as '@', ':', '/', '?', '#'.
+    safe_password = url_quote(password, safe="")
+    dsn = f"postgresql://{user}:{safe_password}@{host}:{port}/{dbname}"
     return _secure_dsn(dsn, root_cert)
 
 
-def is_configured() -> bool:
-    """True when a usable, verified DSN can be built from the environment."""
-    return _build_dsn() is not None
+def load_config() -> SupabaseConfig:
+    """Read configuration from the environment once at startup.
+
+    Reading on every request would be wasteful and would also mask
+    configuration mistakes — we want the app to fail loudly at boot
+    rather than silently 500 in production.
+    """
+    dsn = _build_dsn()
+    supabase_url = os.environ.get("SUPABASE_URL", "").strip() or None
+    anon_key = os.environ.get("SUPABASE_ANON_KEY", "").strip() or None
+    service_role_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip() or None
+
+    try:
+        connect_timeout = int(
+            os.environ.get("SUPABASE_CONNECT_TIMEOUT", _DEFAULTS["SUPABASE_CONNECT_TIMEOUT"])
+        )
+    except ValueError:
+        connect_timeout = int(_DEFAULTS["SUPABASE_CONNECT_TIMEOUT"])
+    try:
+        statement_timeout = int(
+            os.environ.get("SUPABASE_STATEMENT_TIMEOUT", _DEFAULTS["SUPABASE_STATEMENT_TIMEOUT"])
+        )
+    except ValueError:
+        statement_timeout = int(_DEFAULTS["SUPABASE_STATEMENT_TIMEOUT"])
+
+    connect_timeout = max(1, min(connect_timeout, 60))
+    statement_timeout = max(1, min(statement_timeout, 300))
+
+    enabled = bool(dsn)
+    if enabled and not service_role_key:
+        log.warning(
+            "Supabase DSN is set but SUPABASE_SERVICE_ROLE_KEY is missing; "
+            "queue delivery to RLS-protected tables will fail."
+        )
+    return SupabaseConfig(
+        database_url=dsn,
+        supabase_url=supabase_url,
+        anon_key=anon_key,
+        service_role_key=service_role_key,
+        connect_timeout_seconds=connect_timeout,
+        statement_timeout_seconds=statement_timeout,
+        enabled=enabled,
+    )
 
 
-def _get_pool() -> ConnectionPool:
-    """Create the shared connection pool on first use (once per process)."""
+class _Engine:
+    """Per-process cached Postgres connection.
+
+    psycopg 3 connections are thread-safe for sequential use but not for
+    concurrent use from multiple threads. We guard every use with a module
+    lock; gunicorn workers are single-threaded by default anyway.
+
+    The connection is opened lazily so the app can boot in environments
+    where Supabase is paused (the durable queue accepts the request and
+    the worker retries until Supabase wakes up).
+    """
+
+    def __init__(self, config: SupabaseConfig) -> None:
+        self._config = config
+        self._conn: Optional[psycopg.Connection] = None
+        self._lock = threading.Lock()
+
+    def _raw_connect(self) -> psycopg.Connection:
+        # statement_timeout is set at the server level so a runaway query
+        # cannot pin a worker indefinitely even if the application never
+        # gets to read its socket.
+        options = f"-c statement_timeout={self._config.statement_timeout_seconds * 1000}"
+        return psycopg.connect(
+            self._config.database_url,
+            connect_timeout=self._config.connect_timeout_seconds,
+            application_name="anvil-devtools",
+            options=options,
+        )
+
+    def _ensure_conn(self) -> psycopg.Connection:
+        if self._conn is None or self._conn.closed:
+            self._conn = self._raw_connect()
+        return self._conn
+
+    def reset(self) -> None:
+        """Drop the cached connection. The next call will reopen it.
+
+        Called by the worker after a fatal error so we never get stuck
+        reusing a half-broken socket.
+        """
+        with self._lock:
+            if self._conn is not None:
+                try:
+                    self._conn.close()
+                except Exception:
+                    pass
+                self._conn = None
+
+    @contextmanager
+    def cursor(self) -> Iterator[psycopg.Cursor]:
+        """Yield a cursor, restoring the connection to a clean state on exit.
+
+        On any error the connection is closed so the next call reopens it
+        from scratch — Postgres connections in an unclean state can return
+        subtly wrong results.
+
+        The cursor uses ``RealDictCursor`` row factory so callers can
+        refer to columns by name rather than fragile positional indices.
+        """
+        if not self._config.enabled:
+            raise RuntimeError("Supabase is not configured (DATABASE_URL missing).")
+        with self._lock:
+            conn = self._ensure_conn()
+            try:
+                cur = conn.cursor(row_factory=psycopg.rows.dict_row)
+                try:
+                    yield cur
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
+                finally:
+                    cur.close()
+            except Exception:
+                # Connection is suspect. Drop it so we don't reuse a
+                # half-broken socket on the next call.
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                self._conn = None
+                raise
+
+
+def get_engine() -> _Engine:
+    """Return the per-process cached engine, initializing it lazily."""
     global _ENGINE
     if _ENGINE is None:
         with _LOCK:
             if _ENGINE is None:
-                dsn = _build_dsn()
-                if dsn is None:
-                    raise RuntimeError(
-                        "Supabase is not configured. Set DATABASE_URL (or SUPABASE_DB_PASSWORD) "
-                        "and check the TLS settings in the logs."
-                    )
-                statement_ms = _int_env("SUPABASE_STATEMENT_TIMEOUT", 10, 1, 300) * 1000
-                _ENGINE = ConnectionPool(
-                    conninfo=dsn,
-                    min_size=1,
-                    max_size=_int_env("SUPABASE_POOL_MAX_SIZE", 5, 1, 20),
-                    timeout=_int_env("SUPABASE_POOL_WAIT_SECONDS", 10, 1, 60),
-                    open=True,
-                    kwargs={
-                        "connect_timeout": _int_env("SUPABASE_CONNECT_TIMEOUT", 5, 1, 60),
-                        "application_name": "anvil-devtools",
-                        "options": f"-c statement_timeout={statement_ms}",
-                        "row_factory": dict_row,
-                    },
-                )
+                _ENGINE = _Engine(load_config())
     return _ENGINE
 
 
 @contextmanager
 def cursor() -> Iterator[psycopg.Cursor]:
-    """Borrow a pooled connection, yield a cursor, commit on success.
+    """Module-level shortcut used by the rest of the app."""
+    yield from get_engine().cursor()
 
-    The pool rolls back on error and returns the connection for reuse.
-    Rows come back as dicts, so use ``row["column"]``.
-    """
-    with _get_pool().connection() as conn:
-        with conn.cursor() as cur:
-            yield cur
+
+def reset_engine() -> None:
+    """Drop the cached connection. Used by tests and the worker."""
+    eng = _ENGINE
+    if eng is not None:
+        eng.reset()
+
+
+def is_configured() -> bool:
+    """True when a usable DSN is available."""
+    return load_config().enabled
 
 
 def ping() -> bool:
-    """Return True if the database answers a trivial query. Never raises."""
+    """Lightweight connectivity probe used by /admin/queue and /healthz.
+
+    Returns True on success, False on any failure. Never raises so it can
+    be safely called from a request handler without taking the whole
+    request down.
+    """
     if not is_configured():
         return False
     try:
         with cursor() as cur:
-            cur.execute("SELECT 1 AS ok")
+            cur.execute("SELECT 1")
             row = cur.fetchone()
-            return bool(row and row["ok"] == 1)
+            return bool(row and row[0] == 1)
     except Exception as exc:
-        log.warning("Supabase ping failed: %s", exc)
+        log.info("Supabase ping failed: %s", exc)
         return False
 
 
-def reset_engine() -> None:
-    """Close the pool. The next call opens a new one."""
-    global _ENGINE
-    with _LOCK:
-        pool, _ENGINE = _ENGINE, None
-    if pool is not None:
-        pool.close()
+# ── Service-role header helper ───────────────────────────────────────────────
+
+def service_role_header(self_unused=None) -> dict:
+    """Return the headers needed to call Supabase REST with the service-role key.
+
+    Returned only to other server-side modules; never serialized to a
+    template or response. If the key is unset, an empty mapping is
+    returned so callers fail loud at the actual API call rather than
+    silently sending the wrong Authorization header.
+    """
+    cfg = load_config()
+    if cfg.service_role_key:
+        return {
+            "apikey": cfg.service_role_key,
+            "Authorization": f"Bearer {cfg.service_role_key}",
+        }
+    return {}
