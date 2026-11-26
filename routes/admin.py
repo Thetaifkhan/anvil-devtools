@@ -27,6 +27,7 @@ import logging
 import os
 from typing import Any, Dict, List
 
+from services.ttl_cache import ttl_cache
 from flask import (Blueprint, abort, jsonify, redirect,
                    render_template, request, session, url_for)
 
@@ -44,6 +45,9 @@ admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 
 # ── Login / logout ──────────────────────────────────────────────────────────
+
+_cached_ping = ttl_cache(15)(lambda: supabase_client.ping())
+
 
 @admin_bp.get("/login")
 def login():
@@ -124,7 +128,7 @@ def logout():
 @auth_admin.require_admin
 def overview():
     """The landing dashboard. KPIs from every section."""
-    supabase_reachable = supabase_client.ping() if supabase_client.is_configured() else False
+    supabase_reachable = _cached_ping() if supabase_client.is_configured() else False
     q = queue_counts()
     db_health = supabase_client.health_state()
     waiting = q.get("contact_pending", 0) + q.get("analytics_pending", 0)
@@ -190,6 +194,7 @@ def _overview_banner(configured: bool, reachable: bool, q: dict):
     }
 
 
+@ttl_cache(30)
 def _overview_kpis() -> Dict[str, Any]:
     """Pull the headline numbers in a single round-trip."""
     kpi: Dict[str, Any] = {}
@@ -616,7 +621,7 @@ def health_page():
         queue=q,
         db_health=db_health,
         supabase_configured=supabase_client.is_configured(),
-        supabase_reachable=(supabase_client.ping()
+        supabase_reachable=(_cached_ping()
                             if supabase_client.is_configured() else False),
         last_success_at=db_health.get("last_success_at") or 0.0,
         worker_running=is_worker_running(),

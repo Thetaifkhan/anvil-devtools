@@ -19,7 +19,13 @@ from __future__ import annotations
 import logging
 import sqlite3
 
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
+
 from flask import Blueprint, jsonify, request
+
+import supabase_client
+from delivery.worker import _handle_analytics_event
 
 from analytics import (
     hash_ip,
@@ -34,6 +40,37 @@ from delivery import enqueue, QueueFullError
 from services.rate_limit import ANALYTICS_LIMITER
 
 log = logging.getLogger("anvil.analytics.route")
+
+# Analytics are written straight to Supabase when the database is healthy.
+# Only when it is not do they go to the local queue, so events are not held
+# on the instance's disk (which is wiped on restart on the free plan).
+_DIRECT_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="anvil-direct")
+
+
+def _db_available() -> bool:
+    try:
+        return supabase_client.is_configured() and not supabase_client._skip_db_calls()
+    except Exception:
+        return False
+
+
+def _direct_write(payload: dict, event_key: str) -> None:
+    item = SimpleNamespace(event_key=event_key, payload=payload)
+    try:
+        _handle_analytics_event(item)
+    except Exception as exc:
+        log.info("Direct analytics write failed, queueing instead: %s", exc)
+        try:
+            enqueue("analytics_event", payload, event_key=event_key)
+        except Exception:
+            log.warning("Analytics event dropped: database and queue both unavailable.")
+
+
+def _deliver_analytics(payload: dict, event_key: str) -> None:
+    if _db_available():
+        _DIRECT_POOL.submit(_direct_write, payload, event_key)
+        return
+    enqueue("analytics_event", payload, event_key=event_key)
 
 analytics_bp = Blueprint("analytics", __name__, url_prefix="/api/analytics")
 
@@ -80,7 +117,7 @@ def record_event():
         queue_payload["ip_hmac"] = ip_hmac
 
     try:
-        enqueue("analytics_event", queue_payload, event_key=event_key)
+        _deliver_analytics(queue_payload, event_key=event_key)
     except (QueueFullError, sqlite3.Error):
         # Analytics is best-effort. Don't break the page; the browser
         # already failed silently. Tell the JS to back off for a while.
@@ -123,7 +160,7 @@ def upsert_session():
 
     event_key = f"session:{session.session_id}"
     try:
-        enqueue("analytics_event", {
+        _deliver_analytics({
             "event_type": "session_upsert",
             "session": queue_payload,
         }, event_key=event_key)
