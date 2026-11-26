@@ -59,7 +59,7 @@
     if (data === null || data === undefined) return;
     if (document.getElementById("sort-keys").checked) data = sortObjectKeys(data);
     const result = JSON.stringify(data, null, currentIndent());
-    output.textContent = result;
+    Anvil.renderOutput(output, result, { filename: "formatted.json", mime: "application/json" });
     updateMeta(result);
     Anvil.setStatus(status, "Valid JSON — formatted.", "ok");
   }
@@ -69,7 +69,7 @@
     if (data === null || data === undefined) return;
     if (document.getElementById("sort-keys").checked) data = sortObjectKeys(data);
     const result = JSON.stringify(data);
-    output.textContent = result;
+    Anvil.renderOutput(output, result, { filename: "formatted.json", mime: "application/json" });
     updateMeta(result);
     Anvil.setStatus(status, "Valid JSON — minified.", "ok");
   }

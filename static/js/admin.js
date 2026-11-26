@@ -163,4 +163,114 @@
       }
     });
   });
+
+  // ── Admin tables: sortable headers + search + human times ─────────────
+  // Any <table data-enhance> gets: click-to-sort column headers (with
+  // aria-sort), a search box that filters rows by text, and <time
+  // data-ago> elements rendered as "3 minutes ago" with the full
+  // timestamp on hover. Progressive enhancement only - tables remain
+  // readable with JavaScript disabled.
+  function timeAgo(epoch) {
+    if (!epoch) return 'never';
+    var seconds = Math.floor(Date.now() / 1000 - Number(epoch));
+    if (seconds < 0) seconds = 0;
+    if (seconds < 45) return 'just now';
+    var table = [
+      [31536000, 'year'], [2592000, 'month'], [604800, 'week'],
+      [86400, 'day'], [3600, 'hour'], [60, 'minute'],
+    ];
+    for (var i = 0; i < table.length; i++) {
+      var unit = table[i][0], name = table[i][1];
+      if (seconds >= unit) {
+        var value = Math.floor(seconds / unit);
+        return value + ' ' + name + (value !== 1 ? 's' : '') + ' ago';
+      }
+    }
+    return Math.floor(seconds) + ' seconds ago';
+  }
+
+  function fullTime(epoch) {
+    if (!epoch) return '';
+    var d = new Date(Number(epoch) * 1000);
+    return d.toLocaleString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    });
+  }
+
+  function enhanceTimes(root) {
+    root.querySelectorAll('time[data-ago]').forEach(function (el) {
+      var epoch = parseFloat(el.getAttribute('datetime')) || 0;
+      if (!epoch) return;
+      el.textContent = timeAgo(epoch);
+      el.title = fullTime(epoch);
+    });
+  }
+
+  function enhanceTable(table) {
+    if (table.dataset.enhanced) return;
+    table.dataset.enhanced = '1';
+
+    var headers = Array.prototype.slice.call(table.querySelectorAll('thead th'));
+    var body = table.querySelector('tbody');
+
+    // ── Sorting ──
+    headers.forEach(function (th, index) {
+      th.classList.add('sortable');
+      th.setAttribute('aria-sort', 'none');
+      th.addEventListener('click', function () {
+        var current = th.getAttribute('aria-sort');
+        var direction = current === 'ascending' ? -1 : 1;
+        headers.forEach(function (h) { h.setAttribute('aria-sort', 'none'); });
+        th.setAttribute('aria-sort', direction === 1 ? 'ascending' : 'descending');
+        if (!body) return;
+        var rows = Array.prototype.slice.call(body.querySelectorAll('tr'));
+        rows.sort(function (a, b) {
+          var cellA = a.children[index] ? a.children[index].textContent.trim() : '';
+          var cellB = b.children[index] ? b.children[index].textContent.trim() : '';
+          var numA = parseFloat(cellA.replace(/[^0-9.-]/g, ''));
+          var numB = parseFloat(cellB.replace(/[^0-9.-]/g, ''));
+          var cmp;
+          if (!isNaN(numA) && !isNaN(numB) && cellA.match(/\d/) && cellB.match(/\d/)) {
+            cmp = numA - numB;
+          } else {
+            cmp = cellA.localeCompare(cellB, undefined, { sensitivity: 'base' });
+          }
+          return cmp * direction;
+        });
+        rows.forEach(function (r) { body.appendChild(r); });
+      });
+    });
+
+    // ── Search ──
+    if (body && table.dataset.search !== 'off') {
+      var wrapper = document.createElement('div');
+      wrapper.className = 'table-search';
+      var input = document.createElement('input');
+      input.type = 'search';
+      input.placeholder = 'Search this table…';
+      input.setAttribute('aria-label', 'Search table rows');
+      wrapper.appendChild(input);
+      table.parentNode.insertBefore(wrapper, table);
+      input.addEventListener('input', function () {
+        var needle = input.value.trim().toLowerCase();
+        body.querySelectorAll('tr').forEach(function (row) {
+          var text = row.textContent.toLowerCase();
+          row.hidden = needle !== '' && text.indexOf(needle) === -1;
+        });
+      });
+    }
+  }
+
+  function startAdminEnhancers() {
+    enhanceTimes(document);
+    document.querySelectorAll('table[data-enhance]').forEach(enhanceTable);
+    // Refresh relative times every 30 s so "3 minutes ago" stays honest.
+    setInterval(function () { enhanceTimes(document); }, 30000);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startAdminEnhancers);
+  } else {
+    startAdminEnhancers();
+  }
 })();

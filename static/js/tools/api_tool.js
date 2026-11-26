@@ -44,7 +44,7 @@ window.AnvilApi = {
         return null;
       }
       if (reqId !== this._reqIds[endpoint]) return null; // stale
-      output.textContent = data.result;
+      Anvil.renderOutput(output, data.result, { filename: "result.txt" });
       if (meta) meta.textContent = Anvil.formatBytes(new Blob([data.result]).size) + " · " + data.result.split("\n").length + " lines";
       Anvil.setStatus(status, successMessage || "Done.", "ok");
       return data;

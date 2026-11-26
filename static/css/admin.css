@@ -269,7 +269,7 @@
 #support-update-form select:focus, #support-update-form textarea:focus { outline: none; border-color: var(--primary); box-shadow: var(--glow); }
 
 /* ── Responsive ───────────────────────────────────────────────────────── */
-@media (max-width: 900px) {
+@media (max-width: 860px) {
   .admin-shell { grid-template-columns: 1fr; }
   .admin-nav {
     position: relative; top: 0; max-height: none;
@@ -324,3 +324,46 @@
   background: color-mix(in srgb, var(--good) 10%, var(--bg-inset));
   color: var(--good);
 }
+
+/* Overview status cards */
+.status-big { font-size: 2rem; font-weight: 700; margin: .25rem 0; }
+.status-big.good { color: var(--good); }
+.status-big.bad { color: var(--bad); }
+.muted { color: var(--text-faint); font-size: .85rem; }
+
+
+/* == Status banner: one sentence, one clear colour == */
+.admin-banner {
+  display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap;
+  padding: .8rem 1rem; margin-bottom: 1.2rem; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--bg-inset);
+}
+.admin-banner .banner-dot {
+  width: .8rem; height: .8rem; border-radius: 50%; flex: none;
+  align-self: center;
+}
+.admin-banner.green  { border-color: var(--good); }
+.admin-banner.green .banner-dot  { background: var(--good); }
+.admin-banner.amber  { border-color: var(--warn, #d9a03f); }
+.admin-banner.amber .banner-dot  { background: var(--warn, #d9a03f); }
+.admin-banner.red    { border-color: var(--bad); }
+.admin-banner.red .banner-dot    { background: var(--bad); }
+
+/* == Overview question cards == */
+.admin-overview-questions {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem; margin-bottom: 1.2rem;
+}
+
+/* == Sortable tables + search box == */
+thead th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+thead th.sortable:hover { color: var(--text); }
+thead th.sortable::after { content: ' \2195'; opacity: .4; font-size: .8em; }
+thead th[aria-sort='ascending']::after { content: ' \2191'; opacity: 1; }
+thead th[aria-sort='descending']::after { content: ' \2193'; opacity: 1; }
+.table-search { margin: .4rem 0 .6rem; }
+.table-search input {
+  width: min(280px, 100%); padding: .4rem .6rem; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--bg-inset); color: var(--text);
+}
+.small-text { font-size: .78rem; word-break: break-word; }

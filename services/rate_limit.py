@@ -52,3 +52,6 @@ class RateLimiter:
 CONTACT_LIMITER = RateLimiter(max_calls=5, window_seconds=600.0)   # 5 / 10 min
 ANALYTICS_LIMITER = RateLimiter(max_calls=120, window_seconds=60.0)  # 2/sec sustained
 ADMIN_LIMITER = RateLimiter(max_calls=20, window_seconds=60.0)  # admin login throttling
+# Conversion endpoints do real (in-memory) work per request; a per-IP
+# ceiling keeps one client from monopolising the single worker.
+CONVERT_LIMITER = RateLimiter(max_calls=60, window_seconds=60.0)  # 1/sec sustained

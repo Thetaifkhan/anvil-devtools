@@ -29,6 +29,15 @@
   const formatSelect = document.getElementById("format-select");
   const actionSelect = document.getElementById("action-select");
   const runBtn       = document.getElementById("run-btn");
+
+  // Top-bar Copy: copies whichever output box is active for the operation.
+  const topCopy = document.getElementById("wb-top-copy");
+  if (topCopy) {
+    topCopy.addEventListener("click", (e) => {
+      const o = getOutputEl();
+      Anvil.copyText(o ? (o.textContent || o.innerText || "") : "", e.currentTarget);
+    });
+  }
   const optionsEl    = document.getElementById("wb-options");
   const bodyEl       = document.getElementById("wb-body");
   const statusEl     = document.getElementById("wb-status");

@@ -983,3 +983,608 @@ input, textarea, select { max-width: 100%; }
   .skeleton { animation: none !important; background: var(--bg-inset) !important; }
   .result-icon { animation: none !important; }
 }
+
+
+/* ── Output viewer (final) ─────────────────────────────────────────────
+   Output boxes are twice as tall, scroll inside, and keep only the copy
+   icon in view. The header bar no longer sticks to the page. */
+.panel:has(.output-area) > .panel-head { position: static; }
+.output-frame { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.output-frame > .output-area,
+.editor-body .output-frame > .output-area {
+  flex: none; width: 100%; height: 48rem; max-height: 85vh; min-height: 300px;
+  overflow: auto; overscroll-behavior: contain; padding-right: 3rem; scrollbar-gutter: stable;
+}
+@media (max-width: 860px) {
+  .output-frame > .output-area, .editor-body .output-frame > .output-area { height: 32rem; max-height: 75vh; }
+}
+
+
+/* ==========================================================================
+   §2.5 High-contrast theme (WCAG AA: body text >= 4.5:1) + motion controls
+   ========================================================================== */
+[data-theme="high-contrast"] {
+  --bg: #000000;
+  --bg-raised: #0A0A0A;
+  --bg-inset: #111111;
+  --bg-hover: #1C1C1C;
+  --border: #FFFFFF;
+  --border-soft: #9A9A9A;
+  --text: #FFFFFF;        /* 21:1 on #000 */
+  --text-dim: #E6E6E6;    /* ~16.9:1 */
+  --text-faint: #C8C8C8;  /* ~12.6:1 */
+
+  --primary: #FFD700;     /* gold on black: ~17.4:1 */
+  --primary-dim: #E6C200;
+  --primary-soft: color-mix(in srgb, #FFD700 22%, transparent);
+  --accent: #7FDBFF;
+  --cyan: #7FDBFF;
+  --good: #6CFF6C;
+  --warn: #FFD24D;
+  --bad: #FF7B72;
+  --orange: #FFA657;
+
+  --link: #7FDBFF;        /* ~12.5:1 on #000 */
+
+  --shadow: 0 0 0 1px #FFFFFF;
+  --shadow-sm: 0 0 0 1px #9A9A9A;
+  --glow: 0 0 0 3px #FFD700;
+}
+html[data-theme="high-contrast"] { color-scheme: dark; }
+[data-theme="high-contrast"] .terminal-bg { display: none; }
+[data-theme="high-contrast"] .site-header {
+  background: #000000;
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+
+/* Motion toggle button shares the theme-toggle pill styles. */
+.theme-toggle .motion-toggle { font-size: .8rem; }
+.theme-toggle .motion-toggle.active {
+  color: var(--primary); border-color: var(--primary);
+}
+
+/* ── Reduce motion: media query OR the header toggle (§2.5) ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+html[data-motion="reduced"] *,
+html[data-motion="reduced"] *::before,
+html[data-motion="reduced"] *::after {
+  scroll-behavior: auto !important;
+  transition: none !important;
+  animation: none !important;
+}
+
+/* ── §2.5 animations (all GPU-friendly: opacity/transform only) ── */
+
+/* 1. Subtle fade-in for cards. */
+@keyframes anvil-card-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.card, .tool-card, .kpi-card {
+  animation: anvil-card-in .28s ease both;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .admin-grid .card { animation: anvil-card-in .28s ease both; }
+}
+
+/* 2. Pulse on the copy control after copying. */
+@keyframes anvil-copy-pulse {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+.output-copy-icon.copied { animation: anvil-copy-pulse .45s ease; }
+.btn[aria-label].copied, .output-copy-icon.copied { color: var(--good); }
+
+/* 3. Smooth height change for the output box when content appears. */
+@keyframes anvil-output-expand {
+  from { max-height: 30%; opacity: .4; }
+  to   { max-height: var(--output-h, 24rem); opacity: 1; }
+}
+.output-frame > .output-area.just-filled {
+  animation: anvil-output-expand .3s ease;
+}
+
+/* 4. Loading shimmer while a tool runs (status line). */
+@keyframes anvil-shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position: 200% 0; }
+}
+.status-line.is-running {
+  background: linear-gradient(90deg,
+    var(--bg-inset) 25%, var(--bg-hover) 50%, var(--bg-inset) 75%);
+  background-size: 200% 100%;
+  animation: anvil-shimmer 1.1s linear infinite;
+  border-radius: var(--radius-sm);
+  padding-left: .6rem;
+}
+
+
+/* == No-JS contact result banners + large-output notice == */
+.contact-submitted {
+  padding: .9rem 1rem; margin-bottom: 1rem; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--bg-inset);
+}
+.contact-submitted.ok { border-color: var(--good); }
+.contact-submitted.ok strong { color: var(--good); }
+.contact-submitted.error { border-color: var(--bad); }
+.contact-submitted.error strong { color: var(--bad); }
+.output-truncated-note {
+  display: flex; align-items: center; gap: .8rem; flex-wrap: wrap;
+  padding: .6rem .9rem; margin-top: .6rem;
+  border: 1px dashed var(--border); border-radius: var(--radius-sm);
+  background: var(--bg-inset); color: var(--text-dim); font-size: .85rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ANVIL — ENHANCED DESIGN SYSTEM v2
+   Architecture upgrades, richer animations, micro-interactions
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Design tokens: extended palette & motion ─────────────────────────── */
+:root {
+  /* Gradient mesh backgrounds */
+  --mesh-a: color-mix(in srgb, var(--primary) 18%, transparent);
+  --mesh-b: color-mix(in srgb, var(--accent)  12%, transparent);
+  --mesh-c: color-mix(in srgb, var(--cyan)    10%, transparent);
+
+  /* Glow shadows per colour */
+  --glow-primary: 0 0 0 3px color-mix(in srgb, var(--primary) 28%, transparent);
+  --glow-cyan:    0 0 0 3px color-mix(in srgb, var(--cyan)    28%, transparent);
+  --glow-good:    0 0 0 3px color-mix(in srgb, var(--good)    28%, transparent);
+  --glow-bad:     0 0 0 3px color-mix(in srgb, var(--bad)     28%, transparent);
+
+  /* Elevated shadow */
+  --shadow-lg: 0 24px 56px rgba(0,0,0,.55);
+
+  /* Motion speeds */
+  --dur-xs: 80ms;
+  --dur-sm: 140ms;
+  --dur-md: 260ms;
+  --dur-lg: 420ms;
+  --ease-out: cubic-bezier(.22,.68,0,1.2);
+  --ease-in:  cubic-bezier(.55,0,1,.45);
+  --ease:     cubic-bezier(.4,0,.2,1);
+
+  /* Grid overlay for the hero */
+  --grid-line: color-mix(in srgb, var(--border) 55%, transparent);
+}
+
+/* ── 2. Hero section: animated mesh + dot-grid ──────────────────────────── */
+.hero {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* Animated mesh gradient */
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: -40% -20%;
+  background:
+    radial-gradient(60% 70% at 20% 25%, var(--mesh-a), transparent 65%),
+    radial-gradient(50% 60% at 80% 10%, var(--mesh-b), transparent 65%),
+    radial-gradient(40% 50% at 55% 80%, var(--mesh-c), transparent 65%);
+  pointer-events: none;
+  animation: anvil-mesh-drift 18s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@keyframes anvil-mesh-drift {
+  0%   { transform: translate(0,    0)    scale(1); }
+  33%  { transform: translate(2%,  -3%)   scale(1.03); }
+  66%  { transform: translate(-2%,  2%)   scale(.97); }
+  100% { transform: translate(1%,   3%)   scale(1.02); }
+}
+
+/* Dot-grid overlay */
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, var(--grid-line) 1px, transparent 1px);
+  background-size: 28px 28px;
+  pointer-events: none;
+  opacity: .55;
+  mask-image: linear-gradient(to bottom, transparent, black 25%, black 75%, transparent);
+}
+
+/* Hero text entrance */
+.hero h1 {
+  animation: anvil-hero-rise var(--dur-lg) var(--ease-out) both;
+}
+.hero .lede {
+  animation: anvil-hero-rise var(--dur-lg) var(--ease-out) .08s both;
+}
+.hero-search {
+  animation: anvil-hero-rise var(--dur-lg) var(--ease-out) .16s both;
+}
+.hero-stats {
+  animation: anvil-hero-rise var(--dur-lg) var(--ease-out) .24s both;
+}
+
+@keyframes anvil-hero-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Typewriter cursor on the eyebrow */
+.hero .eyebrow {
+  position: relative;
+  display: inline-flex;
+}
+.hero .eyebrow::after {
+  content: "▌";
+  color: var(--primary);
+  margin-left: 2px;
+  animation: anvil-cursor-blink 1.1s step-end infinite;
+}
+@keyframes anvil-cursor-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+/* Stats counter pop */
+.hero-stats .num {
+  display: inline-block;
+  animation: anvil-stat-pop var(--dur-md) var(--ease-out) .4s both;
+}
+@keyframes anvil-stat-pop {
+  from { opacity: 0; transform: scale(.8); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── 3. Tool cards: glass morphism + shimmer on hover ───────────────────── */
+.tool-card {
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(4px);
+  transition:
+    border-color var(--dur-sm) var(--ease),
+    box-shadow   var(--dur-sm) var(--ease),
+    transform    var(--dur-sm) var(--ease),
+    background   var(--dur-sm) var(--ease);
+}
+
+/* Shimmer sweep on hover */
+.tool-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    color-mix(in srgb, var(--primary) 10%, transparent) 50%,
+    transparent 60%
+  );
+  transform: translateX(-100%);
+  transition: transform .5s var(--ease);
+  pointer-events: none;
+}
+.tool-card:hover::before {
+  transform: translateX(100%);
+}
+
+.tool-card:hover {
+  border-color: var(--primary);
+  transform: translateY(-4px);
+  box-shadow: 0 8px 28px rgba(0,0,0,.35),
+              0 0 0 1px color-mix(in srgb, var(--primary) 30%, transparent);
+  background: color-mix(in srgb, var(--bg-raised) 95%, var(--primary) 5%);
+}
+
+/* Staggered card entrance */
+.tool-grid .tool-card {
+  animation: anvil-card-in var(--dur-md) var(--ease-out) both;
+}
+.tool-grid .tool-card:nth-child(1)  { animation-delay:  20ms; }
+.tool-grid .tool-card:nth-child(2)  { animation-delay:  40ms; }
+.tool-grid .tool-card:nth-child(3)  { animation-delay:  60ms; }
+.tool-grid .tool-card:nth-child(4)  { animation-delay:  80ms; }
+.tool-grid .tool-card:nth-child(5)  { animation-delay: 100ms; }
+.tool-grid .tool-card:nth-child(6)  { animation-delay: 120ms; }
+.tool-grid .tool-card:nth-child(7)  { animation-delay: 140ms; }
+.tool-grid .tool-card:nth-child(8)  { animation-delay: 160ms; }
+.tool-grid .tool-card:nth-child(n+9){ animation-delay: 180ms; }
+
+/* ── 4. Header: scroll-triggered opacity + logo animation ───────────────── */
+.site-header {
+  transition: box-shadow var(--dur-md) var(--ease),
+              background var(--dur-md) var(--ease);
+}
+.site-header.scrolled {
+  box-shadow: 0 1px 20px rgba(0,0,0,.35);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+}
+
+/* Logo spark pulse */
+.logo .spark {
+  display: inline-block;
+  animation: anvil-spark-pulse 3.5s ease-in-out infinite;
+}
+@keyframes anvil-spark-pulse {
+  0%, 100% { transform: scale(1)    rotate(0deg);   opacity: 1; }
+  50%       { transform: scale(1.18) rotate(8deg);   opacity: .85; }
+}
+
+/* Nav link underline slide */
+.main-nav a::after {
+  content: "";
+  position: absolute;
+  left: .7rem; right: .7rem; bottom: 2px;
+  height: 2px;
+  background: var(--primary);
+  border-radius: 2px;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--dur-sm) var(--ease);
+}
+.main-nav a:hover::after { transform: scaleX(1); }
+.main-nav a.active::after { transform: scaleX(1); }
+
+/* ── 5. Buttons: ripple + gradient press ────────────────────────────────── */
+.btn {
+  position: relative;
+  overflow: hidden;
+  transition:
+    background-color var(--dur-xs) var(--ease),
+    border-color     var(--dur-xs) var(--ease),
+    color            var(--dur-xs) var(--ease),
+    transform        var(--dur-xs) var(--ease),
+    box-shadow       var(--dur-xs) var(--ease);
+}
+.btn:active:not(:disabled) {
+  transform: scale(.96);
+}
+
+/* Ripple */
+.btn .ripple {
+  position: absolute;
+  border-radius: 50%;
+  transform: scale(0);
+  animation: anvil-ripple .5s linear;
+  background: rgba(255,255,255,.18);
+  pointer-events: none;
+}
+@keyframes anvil-ripple {
+  to { transform: scale(4); opacity: 0; }
+}
+
+/* Primary button glow on focus */
+.btn.primary:focus-visible {
+  box-shadow: var(--glow-primary);
+}
+
+/* ── 6. Tool panels: input → output visual flow ─────────────────────────── */
+.tool-panels {
+  gap: 1.2rem;
+}
+
+.panel {
+  transition: box-shadow var(--dur-sm) var(--ease);
+}
+.panel:focus-within {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 20%, transparent),
+              var(--shadow-sm);
+}
+
+/* Panel header */
+.panel-head {
+  background: linear-gradient(to right, var(--bg-raised), var(--bg-inset));
+  border-bottom: 1px solid var(--border-soft);
+}
+
+/* Output area: smooth fade-in when content arrives */
+.output-area {
+  transition: opacity var(--dur-sm) var(--ease);
+}
+.output-area:empty { opacity: .4; }
+.output-area:not(:empty) { opacity: 1; }
+
+/* ── 7. Status line: state colours + pulse ──────────────────────────────── */
+.status-line.good {
+  color: var(--good);
+  animation: anvil-status-good .4s var(--ease-out);
+}
+.status-line.bad {
+  color: var(--bad);
+  animation: anvil-status-bad .4s var(--ease-out);
+}
+@keyframes anvil-status-good {
+  from { opacity: 0; transform: translateY(-3px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes anvil-status-bad {
+  0%, 20%, 40%, 60%, 80% { transform: translateX(-3px); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX( 3px); }
+  100% { transform: none; }
+}
+
+/* ── 8. Copy icon: bounce pulse ─────────────────────────────────────────── */
+.output-copy-icon {
+  transition:
+    color            var(--dur-xs) var(--ease),
+    border-color     var(--dur-xs) var(--ease),
+    background       var(--dur-xs) var(--ease),
+    transform        var(--dur-xs) var(--ease);
+}
+.output-copy-icon:hover { transform: scale(1.12); }
+.output-copy-icon.copied {
+  animation: anvil-copy-bounce .5s var(--ease-out);
+  color: var(--good);
+  border-color: var(--good);
+}
+@keyframes anvil-copy-bounce {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.3) rotate(-8deg); }
+  65%  { transform: scale(.9) rotate(4deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+
+/* ── 9. Search box: results slide-in ────────────────────────────────────── */
+.search-results:not([hidden]) {
+  animation: anvil-dropdown-in var(--dur-sm) var(--ease-out);
+}
+@keyframes anvil-dropdown-in {
+  from { opacity: 0; transform: translateY(-6px) scale(.98); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── 10. Admin status banner: coloured left bar + fade-in ───────────────── */
+.admin-banner {
+  border-left: 4px solid;
+  animation: anvil-banner-in var(--dur-md) var(--ease-out);
+}
+@keyframes anvil-banner-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── 11. KPI cards: count-up feel + hover lift ──────────────────────────── */
+.kpi-card, .card {
+  transition:
+    box-shadow var(--dur-sm) var(--ease),
+    transform  var(--dur-sm) var(--ease),
+    border-color var(--dur-sm) var(--ease);
+}
+.kpi-card:hover, .card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--border));
+}
+.status-big {
+  animation: anvil-count-pop var(--dur-md) var(--ease-out) .1s both;
+}
+@keyframes anvil-count-pop {
+  from { opacity: 0; transform: scale(.75); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── 12. Admin quicklinks: grid with hover glow ─────────────────────────── */
+.admin-quicklinks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: .6rem;
+}
+.admin-quicklinks a {
+  display: block;
+  padding: .75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  font-size: .88rem;
+  transition:
+    border-color var(--dur-sm) var(--ease),
+    color        var(--dur-sm) var(--ease),
+    background   var(--dur-sm) var(--ease),
+    transform    var(--dur-sm) var(--ease);
+  position: relative;
+  overflow: hidden;
+}
+.admin-quicklinks a::before {
+  content: "→";
+  position: absolute;
+  right: .9rem;
+  top: 50%;
+  transform: translateY(-50%) translateX(0);
+  opacity: .3;
+  font-family: var(--font-mono);
+  transition: transform var(--dur-sm) var(--ease), opacity var(--dur-sm) var(--ease);
+}
+.admin-quicklinks a:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
+  transform: translateX(2px);
+  text-decoration: none;
+}
+.admin-quicklinks a:hover::before {
+  transform: translateY(-50%) translateX(3px);
+  opacity: 1;
+}
+
+/* ── 13. Tables: row hover + sort transition ────────────────────────────── */
+tbody tr {
+  transition: background var(--dur-xs) var(--ease);
+}
+tbody tr:hover {
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+}
+
+/* ── 14. Focus rings: consistent, beautiful ─────────────────────────────── */
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--primary);
+}
+
+/* ── 15. Page transitions (view-transition API if available) ─────────────── */
+@supports (view-transition-name: main) {
+  ::view-transition-old(root) {
+    animation: 160ms ease both anvil-page-out;
+  }
+  ::view-transition-new(root) {
+    animation: 200ms var(--ease-out) both anvil-page-in;
+  }
+  @keyframes anvil-page-out {
+    to { opacity: 0; transform: translateY(4px); }
+  }
+  @keyframes anvil-page-in {
+    from { opacity: 0; transform: translateY(-4px); }
+  }
+}
+
+/* ── 16. Scrollbar styling ───────────────────────────────────────────────── */
+:root {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--bg-inset);
+}
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: var(--bg-inset); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+
+/* ── 17. High-contrast theme overrides ──────────────────────────────────── */
+html[data-theme="high-contrast"] {
+  --bg:        #000;
+  --bg-raised: #111;
+  --bg-inset:  #000;
+  --bg-hover:  #1a1a1a;
+  --border:    #fff;
+  --border-soft: #ccc;
+  --text:      #fff;
+  --text-dim:  #eee;
+  --text-faint:#bbb;
+  --primary:   #FFDD00;
+  --primary-dim:#D4B800;
+  --accent:    #FF7FEF;
+  --cyan:      #00FFFF;
+  --good:      #00FF88;
+  --bad:       #FF4040;
+  --warn:      #FFAA00;
+  --shadow:    0 0 0 2px #fff;
+  --shadow-sm: 0 0 0 1px #ccc;
+  --glow:      0 0 0 3px #FFDD00;
+}
+
+/* ── 18. Reduced-motion override (global) ────────────────────────────────── */
+html[data-motion="reduced"] *,
+html[data-motion="reduced"] *::before,
+html[data-motion="reduced"] *::after {
+  animation-duration: 1ms !important;
+  animation-delay:    1ms !important;
+  transition-duration: 1ms !important;
+}
+
+/* Fade the hero mesh out at the bottom so it never ends in a hard edge. */
+.hero::before {
+  -webkit-mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
+          mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
+}

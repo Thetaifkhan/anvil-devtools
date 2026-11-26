@@ -143,7 +143,7 @@
     if (kind === "validate") { output.textContent = "Valid JSON."; Anvil.setStatus(status, "Valid JSON.", "ok"); updateMeta(text); return; }
     if (document.getElementById("opt-sort") && document.getElementById("opt-sort").checked) data = sortObjectKeys(data);
     const result = kind === "minify" ? JSON.stringify(data) : JSON.stringify(data, null, jsonIndent());
-    output.textContent = result;
+    Anvil.renderOutput(output, result, { filename: "result.txt" });
     updateMeta(result);
     Anvil.setStatus(status, kind === "minify" ? "Valid JSON — minified." : "Valid JSON — formatted.", "ok");
   }
@@ -178,7 +178,7 @@
         return;
       }
       output.classList.remove("has-error");
-      output.textContent = data.result;
+      Anvil.renderOutput(output, data.result, { filename: "result.txt" });
       updateMeta(data.result);
       Anvil.setStatus(status, kind === "minify" ? "Minified." : "Formatted.", "ok");
     });
@@ -227,7 +227,7 @@
         return;
       }
       output.classList.remove("has-error");
-      output.textContent = data.result;
+      Anvil.renderOutput(output, data.result, { filename: "result.txt" });
       updateMeta(data.result);
       Anvil.setStatus(status, kind === "minify" ? "Minified." : "Formatted.", "ok");
     });

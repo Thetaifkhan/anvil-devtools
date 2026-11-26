@@ -8,15 +8,12 @@ unit tests can drive it directly without spinning up Flask.
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import logging
-import os
 import secrets
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 from services.errors import ToolError
 

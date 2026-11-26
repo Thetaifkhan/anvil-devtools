@@ -2,7 +2,7 @@
 // the user has already visited, so purely client-side tools keep working
 // without a network connection. Server-backed tools (XML/YAML/SQL/CSV
 // conversion) still require connectivity.
-const CACHE_NAME = "anvil-cache-v8";
+const CACHE_NAME = "anvil-cache-v9";
 const APP_SHELL = [
   "/",
   "/static/css/main.css",
@@ -30,7 +30,12 @@ const APP_SHELL = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).catch(() => {})
+    caches.open(CACHE_NAME).then((cache) =>
+      // Add each asset individually: one missing file (a renamed script
+      // mid-deploy, say) must not abort the whole precache and leave the
+      // new worker with an empty shell.
+      Promise.all(APP_SHELL.map((url) => cache.add(url).catch(() => {})))
+    )
   );
   self.skipWaiting();
 });
@@ -46,6 +51,10 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  // Only handle our own site. Cross-origin requests (Google Fonts, analytics)
+  // are left to the browser, which applies the page's CSP to them. Fetching
+  // them from inside the worker bypasses that check and gets blocked.
+  if (new URL(event.request.url).origin !== self.location.origin) return;
   // Never cache API calls -- they're processed fresh server-side each time.
   if (event.request.url.includes("/api/")) return;
 
@@ -59,7 +68,12 @@ self.addEventListener("fetch", (event) => {
           }
           return response;
         })
-        .catch(() => cached);
+        .catch(() => cached || Response.error());
+      // Pages go NETWORK-FIRST: after a deploy the visitor always gets the
+      // fresh page, so a stale cached page can never reference removed
+      // scripts and break. Offline still works via the cache fallback.
+      // Assets stay cache-first for speed.
+      if (event.request.mode === "navigate") return networkFetch;
       return cached || networkFetch;
     })
   );
