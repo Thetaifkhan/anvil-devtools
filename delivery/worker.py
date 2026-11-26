@@ -494,7 +494,9 @@ def _handle_analytics_event(item: OutboxItem) -> None:
     sql = """
         INSERT INTO public.analytics_events
             (occurred_at, event_name, session_id, tool_slug, page_path, properties)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s,
+                (SELECT v.id FROM public.visitor_sessions v WHERE v.id = %s::uuid),
+                %s, %s, %s)
         ON CONFLICT DO NOTHING
     """
     params = (

@@ -48,6 +48,7 @@ from typing import Iterator, Optional
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 import psycopg
+from psycopg_pool import PoolTimeout
 from psycopg_pool import ConnectionPool
 
 log = logging.getLogger("anvil.supabase")
@@ -296,8 +297,15 @@ def cursor() -> Iterator[psycopg.Cursor]:
         with _get_pool().connection() as conn:
             with conn.cursor() as cur:
                 yield cur
-    except BaseException as exc:
+    except (psycopg.OperationalError, psycopg.InterfaceError, PoolTimeout) as exc:
+        # The database is unreachable or overloaded: count toward 'down'.
         _record_failure(exc)
+        raise
+    except BaseException:
+        # A data or logic error (for example a foreign-key or constraint
+        # violation) means the database answered. It must not mark the
+        # database down, or one bad row blocks all writes for 30 seconds.
+        _record_success()
         raise
     _record_success()
 
