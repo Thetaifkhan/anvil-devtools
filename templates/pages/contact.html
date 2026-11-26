@@ -18,7 +18,20 @@
       </p>
     </div>
 
-    <form id="contact-form" class="contact-form" novalidate>
+    {% if request.args.get("ref") %}
+    <div class="contact-submitted ok" role="status">
+      <strong>Thank you - your message was accepted.</strong>
+      Your reference code is <code>{{ request.args.get("ref") }}</code>.
+      Keep it for any follow-up.
+    </div>
+    {% elif request.args.get("error") %}
+    <div class="contact-submitted error" role="alert">
+      <strong>We could not send your message.</strong>
+      {{ request.args.get("error") }}
+    </div>
+    {% endif %}
+    <form id="contact-form" class="contact-form" novalidate
+          action="/api/contact" method="post">
       <div class="contact-grid">
         <div class="field">
           <label for="contact-category">Type <span aria-hidden="true">*</span></label>

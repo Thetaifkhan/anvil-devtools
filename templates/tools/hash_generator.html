@@ -1,7 +1,7 @@
 {% extends "tools/_tool_base.html" %}
 {% block tool_body %}
 <div class="panel"><div class="panel-head"><span>Text</span></div><textarea id="input" style="min-height:120px;" placeholder="Enter text to hash…"></textarea></div>
-<div class="btn-row" style="margin:1rem 0;"><button class="btn primary" id="run-btn">Generate hashes ⌘⏎</button></div>
+<div class="btn-row" style="margin:1rem 0;"><button class="btn primary" id="run-btn" data-shortcut-enter>Generate hashes ⌘⏎</button></div>
 <div id="results" style="display:flex; flex-direction:column; gap:.6rem;"></div>
 <div class="status-line neutral" id="status">Enter text and press Generate.</div>
 {% endblock %}

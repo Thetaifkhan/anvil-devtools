@@ -5,7 +5,7 @@
   <div class="panel"><div class="panel-head"><span>JSON input</span></div><textarea id="input" placeholder='{"name":"John","age":30}'></textarea></div>
   <div class="panel"><div class="panel-head"><span>YAML output</span><div class="btn-row"><button class="btn" id="copy-btn">Copy</button><button class="btn" id="download-btn">Download</button></div></div><div class="output-area" id="output"></div><div class="meta-row" id="meta"></div></div>
 </div>
-<div class="btn-row" style="margin:1rem 0;"><button class="btn primary" id="run-btn">Convert ⌘⏎</button></div>
+<div class="btn-row" style="margin:1rem 0;"><button class="btn primary" id="run-btn" data-shortcut-enter>Convert ⌘⏎</button></div>
 <div class="status-line neutral" id="status">Paste JSON and press Convert.</div>
 {% endblock %}
 {% block education %}<h2>How it works</h2><p>Your JSON is parsed, then re-serialized as YAML with block-style formatting (not flow style), preserving key order and nesting.</p>{% endblock %}

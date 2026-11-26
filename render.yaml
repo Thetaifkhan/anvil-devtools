@@ -69,6 +69,10 @@ services:
         value: "900"
       - key: SUPABASE_MAX_QUEUE_ITEMS
         value: "10000"
+      # 0 = analytics pruning DISABLED (long-term retention preferred).
+      # Contact submissions are never pruned regardless of this setting.
+      - key: SUPABASE_QUEUE_ANALYTICS_MAX_AGE_DAYS
+        value: "0"
 
   # ── Background Worker (queue delivery) ────────────────────────────────────
   # Runs the durable delivery loop as a single process.

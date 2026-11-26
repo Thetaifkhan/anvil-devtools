@@ -73,7 +73,7 @@
 {% if dead_lettered %}
 <section class="card">
   <h2>Dead-lettered items <span class="pill bad">{{ dead_lettered|length }}</span></h2>
-  <table class="admin-table">
+  <table class="admin-table" data-enhance>
     <thead>
       <tr>
         <th>ID</th>
@@ -93,7 +93,7 @@
         <td>{{ item.last_error_code or '—' }}</td>
         <td>{{ (item.last_error_msg or '')[:120] }}</td>
         <td>{{ item.attempt_count }}</td>
-        <td>{{ item.created_at|round(0)|int }}s ago</td>
+        <td><time data-ago datetime="{{ item.created_at|round(0)|int }}"></time></td>
         <td>
           <form method="post" action="{{ url_for('admin.queue_retry', item_id=item.id) }}" class="inline-form"
                 data-confirm="Requeue this dead-lettered item for retry?">
@@ -111,7 +111,7 @@
 <section class="card">
   <h2>Recent activity</h2>
   {% if rows %}
-  <table class="admin-table">
+  <table class="admin-table" data-enhance>
     <thead>
       <tr>
         <th>ID</th>
@@ -133,7 +133,7 @@
           {% else %}<span class="pill warn">pending</span>{% endif %}
         </td>
         <td>{{ item.attempt_count }}</td>
-        <td>{{ item.created_at|round(0)|int }}s ago</td>
+        <td><time data-ago datetime="{{ item.created_at|round(0)|int }}"></time></td>
         <td>{{ (item.last_error_msg or '')[:120] or '—' }}</td>
       </tr>
       {% endfor %}

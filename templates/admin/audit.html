@@ -19,7 +19,7 @@
 {% if error %}
 <p class="empty">Could not load audit log: {{ error }}</p>
 {% elif rows %}
-<table class="admin-table audit-table">
+<table class="admin-table audit-table" data-enhance>
   <thead>
     <tr>
       <th>When</th>
@@ -33,7 +33,7 @@
   <tbody>
     {% for r in rows %}
     <tr>
-      <td>{{ r.occurred_at.strftime('%Y-%m-%d %H:%M:%S UTC') if r.occurred_at else '—' }}</td>
+      <td>{% if r.occurred_at %}<time data-ago datetime="{{ r.occurred_at.timestamp()|round(0)|int }}"></time>{% else %}—{% endif %}</td>
       <td><code>{{ r.table_schema }}.{{ r.table_name }}</code></td>
       <td><span class="pill op-{{ r.operation }}">{{ r.operation }}</span></td>
       <td>{{ r.row_pk or '—' }}</td>

@@ -25,14 +25,35 @@ def create_app(test_config=None):
     if str(app.config.get("SITE_URL", "")).lower().startswith("https://"):
         app.config["SESSION_COOKIE_SECURE"] = True
 
-    has_explicit_secret = bool(test_config and test_config.get("SECRET_KEY")) or bool(
-        app.config.get("SECRET_KEY_CONFIGURED")
+    # Fail fast on an unusable signing key in production: a placeholder or
+    # short key would silently invalidate sessions on every restart and
+    # weaken cookie integrity. The random fallback stays available for
+    # development (FLASK_ENV != production). The check reads the
+    # environment FRESH on every call so the module-level app creation
+    # below and explicit test configs behave predictably.
+    _env = ((test_config or {}).get("ENV")
+            or os.environ.get("FLASK_ENV", "production"))
+    _cfg = test_config or {}
+    if "SECRET_KEY" in _cfg:
+        _key = str(_cfg["SECRET_KEY"]).strip()
+    else:
+        _key = os.environ.get("SECRET_KEY", "").strip()
+    _key_safe = (
+        len(_key) >= 32
+        and _key.lower() not in Config._SECRET_KEY_PLACEHOLDERS
     )
-    if not has_explicit_secret and app.config.get("ENV") == "production":
-        app.logger.warning(
-            "A valid SECRET_KEY is not configured. A temporary process key is in use; "
-            "set SECRET_KEY to a stable, high-entropy value (at least 32 characters) for production."
+    if _env == "production" and not _key_safe:
+        raise RuntimeError(
+            "SECRET_KEY is missing, a known placeholder, or shorter than 32 "
+            "characters, and FLASK_ENV=production. Generate one with: "
+            "python -c \"import secrets; print(secrets.token_urlsafe(32))\" "
+            "and set it as an environment variable."
         )
+    if not _key_safe and "SECRET_KEY" in _cfg:
+        # Development (or an explicit empty test config): generate a fresh
+        # process-local key so the app is never signed with "".
+        import secrets as _secrets
+        app.config["SECRET_KEY"] = _secrets.token_urlsafe(32)
 
     @app.after_request
     def add_security_headers(response):
@@ -41,8 +62,12 @@ def create_app(test_config=None):
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault(
-            "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=(), payment=()"
         )
+        # Prevents a newly opened window from holding a handle to this
+        # document (clickjacking / tab-nabbing hardening).
+        response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
         # Inline scripts remain allowed for the current no-build-step template
         # architecture. Dynamic code evaluation is deliberately not allowed.
         response.headers.setdefault(

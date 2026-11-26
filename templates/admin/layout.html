@@ -7,6 +7,7 @@
   <aside class="admin-nav" aria-label="Admin sections">
     <div class="admin-brand">⚒ Anvil Admin</div>
     <a href="{{ url_for('admin.overview') }}" class="{{ 'active' if request.path == '/admin' or request.path == '/admin/' }}">Overview</a>
+    <a href="{{ url_for('admin.health_page') }}" class="{{ 'active' if '/admin/health' in request.path }}">Health</a>
     <a href="{{ url_for('admin.traffic') }}" class="{{ 'active' if '/admin/traffic' in request.path }}">Traffic</a>
     <a href="{{ url_for('admin.engagement') }}" class="{{ 'active' if '/admin/engagement' in request.path }}">Engagement</a>
     <a href="{{ url_for('admin.tools') }}" class="{{ 'active' if '/admin/tools' in request.path }}">Tool usage</a>

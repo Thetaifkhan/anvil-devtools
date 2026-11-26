@@ -1,0 +1,80 @@
+{% extends "admin/layout.html" %}
+{% set section_title = "System health" %}
+
+{% block admin_body %}
+<div class="admin-banner {{ 'green' if supabase_reachable else 'red' if supabase_configured else 'amber' }}" role="status">
+  <span class="banner-dot" aria-hidden="true"></span>
+  <strong>
+    {% if not supabase_configured %}Database not configured.{% elif supabase_reachable %}Database connected.{% else %}Database unreachable.{% endif %}
+  </strong>
+  {{ 'Everything is saving normally.' if supabase_reachable else 'Submissions are kept on this server until the connection returns.' }}
+</div>
+
+<div class="admin-grid">
+  <section class="card">
+    <h2>Database</h2>
+    <ul class="kpi-list">
+      <li><span class="kpi-label">State <em>(healthy / degraded / down — the connection checker)</em></span>
+          <span class="kpi-value">{{ db_health.state }}</span></li>
+      <li><span class="kpi-label">Connected now <em>(answers a trivial query right now)</em></span>
+          <span class="kpi-value {{ 'good' if supabase_reachable else 'bad' }}">{{ 'yes' if supabase_reachable else 'no' }}</span></li>
+      <li><span class="kpi-label">Last successful write <em>(when the database last answered)</em></span>
+          <span class="kpi-value"><time data-ago datetime="{{ last_success_at }}">{{ 'never' if not last_success_at else '' }}</time></span></li>
+      <li><span class="kpi-label">Consecutive failures <em>(3 within 60 s puts it in "down")</em></span>
+          <span class="kpi-value">{{ db_health.consecutive_failures }}</span></li>
+      {% if db_health.last_error %}
+      <li><span class="kpi-label">Last error <em>(kept for diagnosis)</em></span>
+          <span class="kpi-value small-text">{{ db_health.last_error }}</span></li>
+      {% endif %}
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Delivery worker</h2>
+    <ul class="kpi-list">
+      <li><span class="kpi-label">Running <em>(the background thread that saves queued items)</em></span>
+          <span class="kpi-value {{ 'good' if worker_running else 'warn' }}">{{ 'yes' if worker_running else 'no' }}</span></li>
+      <li><span class="kpi-label">Enabled <em>(SUPABASE_WORKER_ENABLED setting)</em></span>
+          <span class="kpi-value">{{ 'yes' if worker_enabled else 'no' }}</span></li>
+      <li><span class="kpi-label">Last run <em>(when it last checked the queue)</em></span>
+          <span class="kpi-value"><time data-ago datetime="{{ worker_last_run_at }}">{{ 'never' if not worker_last_run_at else '' }}</time></span></li>
+      <li><span class="kpi-label">Items in last run <em>(how many it tried to save)</em></span>
+          <span class="kpi-value">{{ worker_last_run_items }}</span></li>
+    </ul>
+    {% if not worker_enabled and queue.pending %}
+    <p class="muted">The worker is disabled but {{ queue.pending }} item(s) are waiting. Start it with SUPABASE_WORKER_ENABLED=1 (single worker) or a Background Worker process.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Local queue</h2>
+    <ul class="kpi-list">
+      <li><span class="kpi-label">Waiting <em>(not saved yet)</em></span>
+          <span class="kpi-value">{{ queue.pending }}</span></li>
+      <li><span class="kpi-label">Saved <em>(delivered to the database)</em></span>
+          <span class="kpi-value good">{{ queue.delivered }}</span></li>
+      <li><span class="kpi-label">Failed <em>(need attention on the Queue page)</em></span>
+          <span class="kpi-value {{ 'bad' if queue.dead_lettered else '' }}">{{ queue.dead_lettered }}</span></li>
+      <li><span class="kpi-label">File size <em>(the local SQLite queue)</em></span>
+          <span class="kpi-value">{{ '%.1f'|format(outbox_bytes / 1024.0) }} KB</span></li>
+      <li><span class="kpi-label">Storage <em>({{ 'persistent' if queue.durable else 'temporary — lost on instance replacement' }})</em></span>
+          <span class="kpi-value {{ '' if queue.durable else 'warn' }}">{{ 'persistent' if queue.durable else 'temporary' }}</span></li>
+    </ul>
+    <p class="muted small">Path: <code>{{ outbox_path }}</code></p>
+  </section>
+
+  <section class="card">
+    <h2>Server</h2>
+    <ul class="kpi-list">
+      {% if disk_free_mb is not none %}
+      <li><span class="kpi-label">Disk free <em>(on the volume holding the queue)</em></span>
+          <span class="kpi-value {{ 'bad' if disk_free_mb < 100 else '' }}">{{ disk_free_mb }} MB of {{ disk_total_mb }} MB</span></li>
+      {% else %}
+      <li><span class="kpi-label">Disk free</span><span class="kpi-value">unknown</span></li>
+      {% endif %}
+      <li><span class="kpi-label">Version <em>(GIT_COMMIT_SHA of the deployed code)</em></span>
+          <span class="kpi-value"><code>{{ version }}</code></span></li>
+    </ul>
+  </section>
+</div>
+{% endblock %}

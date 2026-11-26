@@ -19,12 +19,16 @@ cd anvil-devtools
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-python app.py                      # http://localhost:5000
+FLASK_ENV=development python app.py   # http://localhost:5000
 ```
 
 Runtime dependencies are in `requirements.txt`. Test tools are in
 `requirements-dev.txt`. Local runs need no configuration; a temporary signing
-key is generated at startup.
+key is generated at startup. Local development uses
+`FLASK_ENV=development` (the default for `python app.py` below is set in the
+environment); in `FLASK_ENV=production` the app refuses to boot without a
+`SECRET_KEY` of at least 32 characters, so misconfigurations fail fast
+instead of silently resetting sessions on every restart.
 
 ## Run with Docker
 
@@ -70,7 +74,12 @@ configuration below on the platform, and put the app behind HTTPS.
 
 - **Render, Railway, Fly.io, Google Cloud Run, Azure Container Apps:** deploy the Dockerfile or the GHCR image. Set the port to `8080`.
 - **A VPS:** run the image with `docker run --restart unless-stopped -p 127.0.0.1:8080:8080 --env-file .env ...` and put nginx or Caddy in front for TLS.
-- **Without Docker:** `pip install -r requirements.txt && gunicorn -w 4 -b 0.0.0.0:8080 app:app`.
+- **Without Docker:** `pip install -r requirements.txt && gunicorn -w 1 -b 0.0.0.0:8080 app:app`.
+
+  **One worker only.** The durable queue is a single SQLite file; two gunicorn
+  workers writing to it cause `database is locked` errors. The app now detects
+  a second writer and fails fast with a clear log line. On Render the start
+  command is `gunicorn -w 1 -b 0.0.0.0:$PORT app:app` (see `render.yaml`).
 
 Terminate TLS at the platform or a reverse proxy. When `SITE_URL` starts with
 `https://` in production, Anvil sends HSTS. It does not trust forwarded-protocol

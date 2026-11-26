@@ -38,6 +38,16 @@
         var t = 'dracula';
       }
       document.documentElement.setAttribute('data-theme', t);
+      // Motion preference: stored choice wins, else the OS setting.
+      // Applied before paint so animations never flash first.
+      var m = null;
+      try { m = localStorage.getItem('anvil-reduced-motion'); } catch (e) {}
+      if (m === null && window.matchMedia
+          && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        m = '1';
+      }
+      document.documentElement.setAttribute('data-motion',
+                                             m === '1' ? 'reduced' : 'full');
     })();
   </script>
 
@@ -93,10 +103,12 @@
         <div id="header-search-results" class="search-results" data-search-results hidden></div>
       </div>
       <a class="btn primary header-cta" href="/workbench" style="text-decoration:none; white-space:nowrap;">Open Workbench</a>
-      <div class="theme-toggle" role="group" aria-label="Theme">
+      <div class="theme-toggle" role="group" aria-label="Theme and motion">
         <button type="button" data-theme="light" aria-label="Light theme" title="Light">☀</button>
         <button type="button" data-theme="dracula" aria-label="Dracula theme" title="Dracula">🦇</button>
         <button type="button" data-theme="night-owl" aria-label="Night Owl theme" title="Night Owl">🌙</button>
+        <button type="button" data-theme="high-contrast" aria-label="High contrast theme" title="High contrast">◉</button>
+        <button type="button" id="motion-toggle" class="motion-toggle" aria-label="Reduce motion" title="Reduce motion" aria-pressed="false">⏸</button>
       </div>
       <button class="nav-toggle" id="nav-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-nav">
         <span class="bar"></span><span class="bar"></span><span class="bar"></span>
@@ -116,10 +128,12 @@
     </div>
     <div class="mobile-nav-row">
       <span class="label">Theme</span>
-      <div class="theme-toggle" role="group" aria-label="Theme">
+      <div class="theme-toggle" role="group" aria-label="Theme and motion">
         <button type="button" data-theme="light" aria-label="Light theme" title="Light">☀</button>
         <button type="button" data-theme="dracula" aria-label="Dracula theme" title="Dracula">🦇</button>
         <button type="button" data-theme="night-owl" aria-label="Night Owl theme" title="Night Owl">🌙</button>
+        <button type="button" data-theme="high-contrast" aria-label="High contrast theme" title="High contrast">◉</button>
+        <button type="button" id="motion-toggle" class="motion-toggle" aria-label="Reduce motion" title="Reduce motion" aria-pressed="false">⏸</button>
       </div>
     </div>
   </nav>
@@ -182,6 +196,7 @@
       window.addEventListener('load', () => navigator.serviceWorker.register('/service-worker.js').catch(() => {}));
     }
   </script>
+  <script src="{{ url_for('static', filename='js/tool-drafts.js') }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -5,7 +5,7 @@
   <div class="panel"><div class="panel-head"><span>JSON input</span></div><textarea id="input" placeholder='[{"name":"John","age":30},{"name":"Sarah","age":28}]'></textarea></div>
   <div class="panel"><div class="panel-head"><span>CSV output</span><div class="btn-row"><button class="btn" id="copy-btn">Copy</button><button class="btn" id="download-btn">Download</button></div></div><div class="output-area" id="output"></div><div class="meta-row" id="meta"></div></div>
 </div>
-<div class="btn-row" style="margin:1rem 0;"><button class="btn primary" id="run-btn">Convert ⌘⏎</button></div>
+<div class="btn-row" style="margin:1rem 0;"><button class="btn primary" id="run-btn" data-shortcut-enter>Convert ⌘⏎</button></div>
 <div class="status-line neutral" id="status">Paste a JSON array of flat objects and press Convert.</div>
 {% endblock %}
 {% block education %}<h2>How it works</h2><p>Input must be an array of objects (or a single object, treated as a one-row array). Column headers are collected from every key seen across all rows, in first-seen order.</p>{% endblock %}

@@ -3,9 +3,9 @@
 <div class="notice-banner"><strong>Decoding a JWT does not verify its signature.</strong> Anyone can read a decoded JWT's contents — never treat unverified claims as trustworthy, and never paste a production secret or private key into any website, including this one.</div>
 <div class="panel">
   <div class="panel-head"><span>JWT</span></div>
-  <textarea id="input" style="min-height:100px;" placeholder="eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"></textarea>
+  <textarea id="input" data-no-draft style="min-height:100px;" placeholder="eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"></textarea>
 </div>
-<div class="btn-row" style="margin:1rem 0;"><button class="btn primary" id="run-btn">Decode ⌘⏎</button></div>
+<div class="btn-row" style="margin:1rem 0;"><button class="btn primary" id="run-btn" data-shortcut-enter>Decode ⌘⏎</button></div>
 <div class="status-line neutral" id="status">Paste a JWT (header.payload.signature).</div>
 <div id="result" hidden style="margin-top:1rem;">
   <div class="tool-panels">

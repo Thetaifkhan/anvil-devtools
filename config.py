@@ -29,7 +29,10 @@ class Config:
     # process start, so production deployments must configure a stable secret.
     _RAW_SECRET_KEY = os.environ.get("SECRET_KEY", "").strip()
     _SECRET_KEY_PLACEHOLDERS = {
-        "change-me-in-production", "replace-with-a-random-secret", "changeme", "secret"
+        "change-me-in-production", "replace-with-a-random-secret", "changeme", "secret",
+        # Values used by .env.example and common copy-paste mistakes.
+        "replace-with-a-random-secret-at-least-32-chars", "your-secret-key",
+        "replace-me", "generate-one-with-python-secrets-token-urlsafe",
     }
     SECRET_KEY_CONFIGURED = (
         len(_RAW_SECRET_KEY) >= 32

@@ -98,6 +98,9 @@ The `render.yaml` in this repo defines:
 3. Set the runtime to *Python 3*.
 4. Build command: `pip install -r requirements.txt`
 5. Start command: `gunicorn -w 1 -b 0.0.0.0:${PORT:-8080} app:app`
+   NOTE: with FLASK_ENV=production the app now REFUSES to boot unless
+   SECRET_KEY is set to a random value of at least 32 characters
+   (Render's `generateValue: true` in render.yaml does this for you).
    Do NOT add `--preload`. The delivery worker is a thread, and threads
    do not survive `fork()`. With `--preload` the thread started in the
    master is lost in the worker, so delivery silently stops. Without
@@ -143,6 +146,10 @@ variables have sensible defaults.
 | `SUPABASE_QUEUE_ANALYTICS_MAX_AGE_DAYS` | `0`     | Old analytics event cutoff. Default 0 = pruning DISABLED (long-term retention preferred). Set to a positive integer to enable pruning. Contact submissions are NEVER pruned regardless of this setting. |
 | `SUPABASE_QUEUE_SATURATION_ALERT_PCT`  | `80`    | When pending items reach this percentage of `SUPABASE_MAX_QUEUE_ITEMS`, the worker logs a WARNING every `SUPABASE_QUEUE_SATURATION_ALERT_COOLDOWN_MIN` minutes and the admin dashboard surfaces a saturation alert. Set to 0 to disable. |
 | `SUPABASE_QUEUE_SATURATION_ALERT_COOLDOWN_MIN` | `15` | Minimum minutes between saturation log entries (prevents log spam). |
+| `SUPABASE_POOL_MAX_IDLE`               | `60`    | Seconds before an idle pooled database connection is recycled. |
+| `SUPABASE_POOL_MAX_LIFETIME`            | `1800`  | 30 minutes; stale connections are replaced so a server-side reset never pins a broken socket. |
+| `OUTBOX_ALLOW_MULTI_PROCESS`            | `0`     | Leave at 0: the app refuses to enqueue when another live process owns the SQLite outbox (the clear fail-fast message replaces `database is locked`). Set to 1 only for the documented multi-process claim topology. |
+| `GIT_COMMIT_SHA`                        | *(unset)* | Optional: the deployed commit hash, shown on the admin **Health** page for fast incident triage. |
 | `FLASK_ENV`                             | `production` | |
 | `FLASK_DEBUG`                           | `0`     | |
 

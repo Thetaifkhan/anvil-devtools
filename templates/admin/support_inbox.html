@@ -28,7 +28,7 @@
 {% if error %}
 <p class="empty">Could not load inbox: {{ error }}</p>
 {% elif rows %}
-<table class="admin-table">
+<table class="admin-table" data-enhance>
   <thead>
     <tr>
       <th>Reference</th>
@@ -47,7 +47,7 @@
       <td>{{ r.category }}</td>
       <td><span class="pill status-{{ r.status }}">{{ r.status }}</span></td>
       <td><span class="pill priority-{{ r.priority }}">{{ r.priority }}</span></td>
-      <td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '—' }}</td>
+      <td>{% if r.created_at %}<time data-ago datetime="{{ r.created_at.timestamp()|round(0)|int }}"></time>{% else %}—{% endif %}</td>
     </tr>
     {% endfor %}
   </tbody>
