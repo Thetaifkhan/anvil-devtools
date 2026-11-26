@@ -49,9 +49,9 @@
   ];
 
   const THEME_COLORS = {
-    light:       ["#7C4FD1", "#0E7C8C", "#8B8371", "#C23B8C"],
+    light:       ["#268BD2", "#2AA198", "#586E75", "#D33682"],
     dracula:     ["#BD93F9", "#8BE9FD", "#50FA7B", "#FF79C6", "#FFB86C"],
-    "night-owl": ["#82AAFF", "#7FDBCA", "#C792EA", "#ADDB67"],
+    "night-owl": ["#00F0FF", "#FF2BD6", "#39FF88", "#FFE14D"],
   };
 
   const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -89,7 +89,10 @@
     ctx.globalAlpha = 1;
   }
 
-  function frame() {
+  let lastFrame = 0;
+  function frame(now) {
+    if (now - lastFrame < 33) { raf = requestAnimationFrame(frame); return; }
+    lastFrame = now;
     if (!visible) { raf = null; return; }
     ctx.clearRect(0, 0, width, height);
     ctx.font = fontSize + "px 'JetBrains Mono', monospace";

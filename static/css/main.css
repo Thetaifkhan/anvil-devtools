@@ -69,31 +69,16 @@
 
 /* ---------------------------------- Light --------------------------------- */
 [data-theme="light"] {
-  --bg: #F6F4EE;
-  --bg-raised: #FFFFFF;
-  --bg-inset: #EFEBE0;
-  --bg-hover: #EDE8DA;
-  --border: #D9D1BE;
-  --border-soft: #E7E1D1;
-  --text: #211E15;
-  --text-dim: #57503F;
-  --text-faint: #8B8371;
-
-  --primary: #7C4FD1;
-  --primary-dim: #6A3FB8;
-  --primary-soft: color-mix(in srgb, #7C4FD1 10%, transparent);
-  --accent: #C23B8C;
-  --cyan: #0E7C8C;
-  --good: #227A3D;
-  --warn: #8A5F06;
-  --bad: #C0392B;
-  --orange: #C1650F;
-
-  --link: #166A7D;
-
-  --shadow: 0 10px 30px rgba(35,32,15,0.1);
-  --shadow-sm: 0 1px 4px rgba(35,32,15,0.07);
-  --glow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+  --bg: #FDF6E3; --bg-raised: #F7F0DC; --bg-inset: #EEE8D5; --bg-hover: #E8E1CB;
+  --border: #D6CDB4; --border-soft: #E4DCC6;
+  --text: #586E75; --text-dim: #657B83; --text-faint: #93A1A1;
+  --primary: #268BD2; --primary-dim: #1C6FA8;
+  --primary-soft: color-mix(in srgb, #268BD2 12%, transparent);
+  --accent: #D33682; --cyan: #2AA198; --good: #859900; --warn: #B58900;
+  --bad: #DC322F; --orange: #CB4B16; --link: #268BD2;
+  --shadow: 0 10px 30px rgba(88,110,117,0.16);
+  --shadow-sm: 0 2px 8px rgba(88,110,117,0.12);
+  --glow: 0 0 0 3px color-mix(in srgb, #268BD2 28%, transparent);
 }
 
 /* --------------------------------- Dracula --------------------------------- */
@@ -125,30 +110,19 @@
 
 /* -------------------------------- Night Owl -------------------------------- */
 [data-theme="night-owl"] {
-  --bg: #011221;
-  --bg-raised: #0B2942;
-  --bg-inset: #01111E;
-  --bg-hover: #0F3454;
-  --border: #1E4A6D;
-  --border-soft: #123454;
-  --text: #D6E7F5;
-  --text-dim: #9FB8CE;
-  --text-faint: #5F7E97;
-
-  --primary: #82AAFF;
-  --primary-dim: #5B8AE0;
-  --primary-soft: color-mix(in srgb, #82AAFF 16%, transparent);
-  --accent: #C792EA;
-  --cyan: #7FDBCA;
-  --good: #ADDB67;
-  --warn: #FFCB6B;
-  --bad: #FF5874;
-  --orange: #F78C6C;
-  --link: var(--primary);
-
-  --shadow: 0 16px 40px rgba(0,4,12,0.6);
-  --glow: 0 0 0 3px color-mix(in srgb, var(--primary) 30%, transparent), 0 0 16px color-mix(in srgb, var(--primary) 25%, transparent);
+  --bg: #07080F; --bg-raised: #0E1020; --bg-inset: #05060B; --bg-hover: #171A33;
+  --border: #2A2F5A; --border-soft: #1B1F40;
+  --text: #EAF7FF; --text-dim: #AEBBE0; --text-faint: #6C77A8;
+  --primary: #00F0FF; --primary-dim: #00B8C8;
+  --primary-soft: color-mix(in srgb, #00F0FF 14%, transparent);
+  --accent: #FF2BD6; --cyan: #00F0FF; --good: #39FF88; --warn: #FFE14D;
+  --bad: #FF3864; --orange: #FF9F1C; --link: #00F0FF;
+  --shadow: 0 16px 40px rgba(0,0,0,0.6);
+  --shadow-sm: 0 2px 10px rgba(0,0,0,0.5);
+  --glow: 0 0 0 3px color-mix(in srgb, #00F0FF 35%, transparent);
 }
+[data-theme="night-owl"] .logo { text-shadow: 0 0 12px color-mix(in srgb, #00F0FF 55%, transparent); }
+[data-theme="night-owl"] .btn.primary { box-shadow: 0 0 18px color-mix(in srgb, #FF2BD6 35%, transparent); }
 
 /* --------------------------------- Reset ---------------------------------- */
 
@@ -1174,7 +1148,6 @@ html[data-motion="reduced"] *::after {
     radial-gradient(50% 60% at 80% 10%, var(--mesh-b), transparent 65%),
     radial-gradient(40% 50% at 55% 80%, var(--mesh-c), transparent 65%);
   pointer-events: none;
-  animation: anvil-mesh-drift 18s ease-in-out infinite alternate;
   will-change: transform;
 }
 
@@ -1246,7 +1219,6 @@ html[data-motion="reduced"] *::after {
 .tool-card {
   position: relative;
   overflow: hidden;
-  backdrop-filter: blur(4px);
   transition:
     border-color var(--dur-sm) var(--ease),
     box-shadow   var(--dur-sm) var(--ease),
@@ -1308,7 +1280,6 @@ html[data-motion="reduced"] *::after {
 /* Logo spark pulse */
 .logo .spark {
   display: inline-block;
-  animation: anvil-spark-pulse 3.5s ease-in-out infinite;
 }
 @keyframes anvil-spark-pulse {
   0%, 100% { transform: scale(1)    rotate(0deg);   opacity: 1; }

@@ -9,7 +9,7 @@
   const THEME_KEY = "anvil-theme";
   const MOTION_KEY = "anvil-reduced-motion";
   const THEME_COLORS = {
-    light: "#F6F4EE", dracula: "#1B1C26", "night-owl": "#011221",
+    light: "#F6F4EE", dracula: "#1B1C26", "night-owl": "#07080F",
     "high-contrast": "#000000",
   };
 
