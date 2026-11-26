@@ -41,15 +41,14 @@ on ``delivery_status`` so the user is never misled.
 from __future__ import annotations
 
 import logging
+import sqlite3
 
 from flask import Blueprint, jsonify, render_template, request
 
 from analytics import limiter_identity
-from auth import admin as auth_admin  # late binding so tests can patch
 from delivery import enqueue, QueueFullError
 from delivery.outbox import is_durable
 from services.contact_service import (
-    ContactSubmission,
     client_idempotency_key,
     validate_submission,
 )
@@ -60,6 +59,20 @@ from tool_registry import TOOLS
 log = logging.getLogger("anvil.contact")
 
 contact_bp = Blueprint("contact", __name__)
+
+
+def _form_post() -> bool:
+    """True when a browser submitted the HTML form without JavaScript."""
+    ctype = (request.content_type or "").lower()
+    return ctype.startswith("application/x-www-form-urlencoded")
+
+
+def _back(params):
+    """Redirect back to the contact page with plain-language params."""
+    from urllib.parse import urlencode
+    from flask import redirect
+    clean = {k: str(v)[:500] for k, v in params.items() if v is not None}
+    return redirect("/contact?" + urlencode(clean))
 
 
 @contact_bp.get("/contact")
@@ -86,19 +99,30 @@ def submit_contact():
     if not allowed:
         # Log a security event via the queue (best-effort).
         _queue_security_event("rate_limited", limiter_key)
-        return jsonify({
+        if _form_post():
+            return _back({"error": "Too many submissions. Please try "
+                            "again in a few minutes."}), 429
+        resp = jsonify({
             "ok": False,
             "error": "Too many submissions. Please try again in a few minutes.",
             "retry_after_seconds": int(retry_after),
-        }), 429
+        })
+        resp.status_code = 429
+        resp.headers["Retry-After"] = str(max(1, int(retry_after)))
+        return resp
 
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        # No-JavaScript fallback: the form posts urlencoded fields.
+        payload = request.form.to_dict() if request.form else None
     if not isinstance(payload, dict):
         raise ToolError("Request body must be a JSON object.")
 
     try:
         submission = validate_submission(payload)
     except ToolError as e:
+        if _form_post():
+            return _back({"error": e.message}), 400
         return jsonify({"ok": False, "error": e.message}), 400
 
     # The idempotency event_key: prefer the client-supplied key (so a
@@ -117,11 +141,33 @@ def submit_contact():
             queue_payload,
             event_key=event_key,
         )
+    except sqlite3.Error as exc:
+        # The local queue is broken (corrupt, locked, or the disk
+        # is full). Tell the visitor plainly and keep the log for
+        # the operator; never show a generic error page.
+        log.error("Local outbox failed; contact submission rejected: %s", exc)
+        if _form_post():
+            return _back({"error": "We cannot save your message right now "
+                            "because our local queue is unavailable. Please "
+                            "email us directly or try again in a few "
+                            "minutes."}), 503
+        return jsonify({
+            "ok": False,
+            "delivery_status": "rejected",
+            "error": "We cannot save your message right now because our "
+                     "local queue is unavailable. Please email us directly "
+                     "or try again in a few minutes.",
+            "reference_code": None,
+        }), 503
     except QueueFullError:
         # We NEVER silently drop a contact submission. Tell the user
         # to retry and log loudly so an operator can intervene.
         log.error("Outbox full; rejecting contact submission %s.",
                   submission.reference_code)
+        if _form_post():
+            return _back({"error": "We cannot accept your submission right "
+                            "now. Please email us directly or try again "
+                            "later."}), 503
         return jsonify({
             "ok": False,
             "delivery_status": "rejected",
@@ -163,6 +209,9 @@ def submit_contact():
             "the queue before any deploy. Use the reference code to follow up."
         )
 
+    if _form_post():
+        return _back({"ref": submission.reference_code,
+                       "status": delivery_status}), 303
     return jsonify({
         "ok": True,
         "delivery_status": delivery_status,

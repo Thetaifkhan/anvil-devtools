@@ -17,7 +17,7 @@ best-effort) but contact submissions are NEVER dropped (see
 from __future__ import annotations
 
 import logging
-import time
+import sqlite3
 
 from flask import Blueprint, jsonify, request
 
@@ -27,12 +27,10 @@ from analytics import (
     trusted_proxy_count_from_env,
     limiter_identity,
     new_event_key,
-    sanitize_properties,
     validate_event_payload,
     validate_session_payload,
 )
 from delivery import enqueue, QueueFullError
-from services.errors import ToolError
 from services.rate_limit import ANALYTICS_LIMITER
 
 log = logging.getLogger("anvil.analytics.route")
@@ -57,11 +55,14 @@ def record_event():
     """Queue one analytics event for delivery."""
     allowed, retry_after = ANALYTICS_LIMITER.check(_limiter_key())
     if not allowed:
-        return jsonify({
+        resp = jsonify({
             "ok": False,
             "error": "rate_limited",
             "retry_after_seconds": int(retry_after),
-        }), 429
+        })
+        resp.status_code = 429
+        resp.headers["Retry-After"] = str(max(1, int(retry_after)))
+        return resp
 
     payload = request.get_json(silent=True) or {}
     event = validate_event_payload(payload)
@@ -80,7 +81,7 @@ def record_event():
 
     try:
         enqueue("analytics_event", queue_payload, event_key=event_key)
-    except QueueFullError:
+    except (QueueFullError, sqlite3.Error):
         # Analytics is best-effort. Don't break the page; the browser
         # already failed silently. Tell the JS to back off for a while.
         return jsonify({"ok": False, "error": "queue_full"}), 503
@@ -97,11 +98,14 @@ def upsert_session():
     """
     allowed, retry_after = ANALYTICS_LIMITER.check(_limiter_key())
     if not allowed:
-        return jsonify({
+        resp = jsonify({
             "ok": False,
             "error": "rate_limited",
             "retry_after_seconds": int(retry_after),
-        }), 429
+        })
+        resp.status_code = 429
+        resp.headers["Retry-After"] = str(max(1, int(retry_after)))
+        return resp
 
     payload = request.get_json(silent=True) or {}
     session = validate_session_payload(payload)
@@ -123,7 +127,7 @@ def upsert_session():
             "event_type": "session_upsert",
             "session": queue_payload,
         }, event_key=event_key)
-    except QueueFullError:
+    except (QueueFullError, sqlite3.Error):
         return jsonify({"ok": False, "error": "queue_full"}), 503
 
     return jsonify({"ok": True}), 202

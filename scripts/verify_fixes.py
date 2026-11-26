@@ -194,7 +194,7 @@ def main() -> int:
                 try:
                     if "Decode" in (b.inner_text() or ""):
                         b.click(); break
-                except: pass
+                except Exception: pass
             page.wait_for_timeout(500)
             body = page.evaluate("() => document.body.innerText || ''")
             # Should have either a download-binary link or a clear message
@@ -218,7 +218,7 @@ def main() -> int:
                 try:
                     if "Compare" in (b.inner_text() or ""):
                         b.click(); break
-                except: pass
+                except Exception: pass
             page.wait_for_timeout(500)
             status_text = page.eval_on_selector("#status", "el => el.textContent")
             check("BUG-1 json_diff equal arrays no diff", "0 difference" in status_text.lower() or "0 difference(s)" in status_text, status_text)
@@ -234,7 +234,7 @@ def main() -> int:
                 try:
                     if "Compare" in (b.inner_text() or ""):
                         b.click(); break
-                except: pass
+                except Exception: pass
             page.wait_for_timeout(500)
             disabled2 = page.eval_on_selector("#copy-btn", "el => el.disabled")
             check("BUG-19 json_diff Copy button enabled after diff", disabled2 is False, f"disabled={disabled2}")
@@ -246,14 +246,14 @@ def main() -> int:
                 try:
                     if "Render" in (b.inner_text() or ""):
                         b.click(); break
-                except: pass
+                except Exception: pass
             page.wait_for_timeout(300)
             # Click Collapse all
             for b in page.query_selector_all("button"):
                 try:
                     if "Collapse" in (b.inner_text() or ""):
                         b.click(); break
-                except: pass
+                except Exception: pass
             page.wait_for_timeout(200)
             toggles = page.eval_on_selector_all(".toggle", "els => els.map(e => e.textContent)")
             # After collapse, the root toggle should be "▸" (collapsed)

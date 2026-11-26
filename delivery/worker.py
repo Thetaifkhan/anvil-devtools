@@ -76,6 +76,11 @@ _worker_pid: Optional[int] = None
 _worker_stop = threading.Event()
 _consecutive_iteration_failures = 0
 
+# Health-page instrumentation: when did the worker last run, and how many
+# items did that run attempt? Updated by run_once(); read by /admin/health.
+_last_run_at = 0.0
+_last_run_items = 0
+
 # Track the last time we logged a saturation alert so we don't spam logs.
 # Saturation is checked once per poll cycle (every SUPABASE_WORKER_POLL_SECONDS
 # seconds, default 5). With the cooldown at 15 minutes, that's at most one
@@ -134,6 +139,7 @@ def _after_fork_in_child() -> None:
     _outbox._LOCK = threading.Lock()
     _supabase._LOCK = threading.Lock()
     _supabase._ENGINE = None
+    _supabase.reset_health()
     _LIFECYCLE_LOCK = threading.Lock()
     _worker_stop = threading.Event()
     _worker_thread = None
@@ -253,7 +259,10 @@ def _saturation_cooldown_seconds() -> float:
 
 def run_once(batch_size: int = 10) -> int:
     """Process a single batch of pending items. Returns count attempted."""
+    global _last_run_at, _last_run_items
+    _last_run_at = time.time()
     items = claim_pending(batch_size=batch_size)
+    _last_run_items = len(items)
     if not items:
         return 0
     log.info("Worker claimed %d outbox item(s).", len(items))
@@ -303,6 +312,31 @@ def _process_item(item: OutboxItem) -> None:
         _handle_failure(item, exc, cls)
 
 
+# Short, plain-language dead-letter reasons. The SQLSTATE/code stays in
+# last_error_code and the full exception text in last_error_msg.
+_DEAD_LETTER_REASONS = {
+    "22P02": "Invalid data format",
+    "22P05": "Untranslatable characters",
+    "22001": "Text too long for the database",
+    "23502": "A required field was missing",
+    "23503": "Related record not found",
+    "23505": "Duplicate record",
+    "23514": "Data rejected by a database rule",
+    "23P01": "Conflicting record",
+    "42P01": "Database table missing (migration not run?)",
+    "42703": "Database column missing (migration not run?)",
+    "42804": "Data type mismatch",
+    "42P10": "Invalid column reference",
+    "42P17": "Invalid database object",
+    "42501": "Permission denied by the database",
+    "unknown_event_type": "Unknown event type",
+}
+
+
+def _readable_dead_letter_reason(cls: ErrorClassification) -> str:
+    return _DEAD_LETTER_REASONS.get(cls.code, "Unexpected error")[:200]
+
+
 def _handle_failure(item: OutboxItem, exc: Exception, cls: ErrorClassification) -> None:
     """Schedule the next retry or dead-letter the item."""
     log.warning(
@@ -312,10 +346,21 @@ def _handle_failure(item: OutboxItem, exc: Exception, cls: ErrorClassification) 
     )
 
     if not cls.transient:
-        # Permanent failure — the payload or schema is wrong, retrying won't help.
-        reason = f"permanent_failure:{cls.code}:{cls.reason}"
+        # Permanent failure — the payload or schema is wrong, retrying won't
+        # help. Give the operator a SHORT readable reason in the dashboard;
+        # keep the full error separately for developers.
+        reason = _readable_dead_letter_reason(cls)
+        # Record the full error on the row first (last_error_* columns are
+        # the developer-facing detail), then the terminal state.
+        mark_failed(
+            item.id,
+            error_code=cls.code,
+            error_msg=str(exc)[:500],
+            next_attempt_at=time.time(),
+        )
         dead_letter(item.id, reason=reason)
-        log.error("Dead-lettered item %s: %s", item.event_key, reason)
+        log.error("Dead-lettered item %s: %s (code=%s)",
+                  item.event_key, reason, cls.code)
         return
 
     # Transient: schedule a retry with exponential backoff + jitter.
@@ -329,6 +374,86 @@ def _handle_failure(item: OutboxItem, exc: Exception, cls: ErrorClassification) 
     )
     log.info("Requeued item %s for retry in %.1fs (attempt %d → %d).",
              item.event_key, backoff, item.attempt_count, item.attempt_count + 1)
+
+
+# ── Timestamp schema map ────────────────────────────────────────────────────
+# Which payload fields are timestamps (epoch seconds) that must become
+# timezone-aware datetimes before they reach Postgres. The worker converts
+# EXACTLY these fields; anything not listed is passed through untouched.
+#
+# REGRESSION GUARD: tests/test_phase2_outbox.py asserts that every
+# ``*_at`` field known for each event type appears here. Adding a new
+# timestamp-ish field without registering it will fail that test.
+TIMESTAMP_FIELDS = {
+    "analytics_event": {"occurred_at"},
+    "analytics_event_session": {"started_at", "last_seen_at", "ended_at"},
+    "contact_submission": {"consent_recorded_at", "occurred_at", "created_at"},
+    "admin_audit": {"occurred_at"},
+}
+
+# All fields each event type may carry (for the guard test + clamping).
+KNOWN_FIELDS = {
+    "analytics_event": {
+        "event_name", "session_id", "tool_slug", "page_path", "properties",
+        "occurred_at", "ip_hmac",
+    },
+    "analytics_event_session": {
+        "session_id", "visitor_id", "started_at", "last_seen_at", "ended_at",
+        "engagement_seconds", "landing_page", "referrer_domain",
+        "device_type", "country_code", "ip_hmac",
+    },
+    "contact_submission": {
+        "reference_code", "name", "email", "category", "subject", "message",
+        "page_url", "tool_slug", "browser_context", "consent_recorded_at",
+        "event_key", "occurred_at", "created_at",
+    },
+    "admin_audit": {
+        "action", "user_id", "occurred_at", "route_name", "details",
+    },
+}
+
+# Clock-skew clamping window (see §2.6): event times more than this far in
+# the future, or older than this, are clamped and logged, never stored raw.
+MAX_FUTURE_SKEW_SECONDS = 5 * 60          # 5 minutes ahead
+MAX_AGE_SECONDS = 365 * 24 * 3600         # one year back
+
+
+def _clamp_epoch(value):
+    """Clamp an epoch number into a sane window; pass others through."""
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return value
+    import time as _time
+    now = _time.time()
+    if value > now + MAX_FUTURE_SKEW_SECONDS:
+        log.warning(
+            "Event timestamp %.0f is in the future (clock skew?); clamping "
+            "to now.", value,
+        )
+        return now
+    if value < now - MAX_AGE_SECONDS:
+        log.warning(
+            "Event timestamp %.0f is older than %d days; clamping to now.",
+            value, MAX_AGE_SECONDS // 86400,
+        )
+        return now
+    return value
+
+
+def _convert_timestamps(event_type: str, payload: dict) -> dict:
+    """Return a payload copy whose registered timestamp fields are clamped.
+
+    The actual epoch -> datetime conversion stays in ``_to_ts`` at SQL
+    binding time; this pass enforces the schema map and the clamping so a
+    skewed client clock can never store year-20380 or 1970 dates.
+    """
+    fields = TIMESTAMP_FIELDS.get(event_type, set())
+    if not fields:
+        return payload
+    out = dict(payload)
+    for f in fields:
+        if f in out:
+            out[f] = _clamp_epoch(out[f])
+    return out
 
 
 # ── Event handlers ────────────────────────────────────────────────────────────
@@ -352,11 +477,13 @@ def _handle_analytics_event(item: OutboxItem) -> None:
     the previous attempt committed on the server but the response was
     lost (ambiguous commit).
     """
-    payload = item.payload
+    payload = _convert_timestamps("analytics_event", item.payload)
     _delivery_queue_upsert(item.event_key, "analytics_event", payload)
 
     if "session" in payload and "event_name" not in payload:
-        _upsert_session(item.event_key, payload["session"])
+        _upsert_session(item.event_key,
+                        _convert_timestamps("analytics_event_session",
+                                            payload["session"]))
         return
 
     # Plain analytics event. The schema has no UNIQUE constraint on
@@ -371,7 +498,7 @@ def _handle_analytics_event(item: OutboxItem) -> None:
         ON CONFLICT DO NOTHING
     """
     params = (
-        payload.get("occurred_at"),
+        _to_ts(payload.get("occurred_at")),
         payload.get("event_name"),
         payload.get("session_id"),
         payload.get("tool_slug"),
@@ -407,9 +534,9 @@ def _upsert_session(event_key: str, payload: dict) -> None:
     params = (
         payload.get("session_id"),
         payload.get("visitor_id"),
-        payload.get("started_at"),
-        payload.get("last_seen_at"),
-        payload.get("ended_at"),
+        _to_ts(payload.get("started_at")),
+        _to_ts(payload.get("last_seen_at")),
+        _to_ts(payload.get("ended_at")),
         payload.get("engagement_seconds"),
         payload.get("landing_page"),
         payload.get("referrer_domain"),
@@ -443,7 +570,7 @@ def _handle_contact_submission(item: OutboxItem) -> None:
     row but the connection dropped before the response arrived, the
     retry's INSERT will conflict on reference_code and do nothing.
     """
-    payload = item.payload
+    payload = _convert_timestamps("contact_submission", item.payload)
     _delivery_queue_upsert(item.event_key, "contact_submission", payload)
 
     sql = """
@@ -471,9 +598,36 @@ def _handle_contact_submission(item: OutboxItem) -> None:
 
 
 def _handle_admin_audit(item: OutboxItem) -> None:
-    """Admin audit events are already written by triggers; nothing to do
-    here except record that the queue entry has been processed."""
-    log.debug("admin_audit item %s processed (no-op).", item.event_key)
+    """Insert an admin action into public.security_events.
+
+    Queued by services/audit.py for login, logout, queue retry and
+    support status changes. The payload NEVER contains the token -
+    only the verified user id, the action name and a timestamp.
+    Idempotent via the outbox/delivery_queue event_key layers.
+    """
+    import json as _json
+    payload = _convert_timestamps("admin_audit", item.payload)
+    action = payload.get("action") or "unknown"
+    details = payload.get("details")
+    if isinstance(details, str):
+        try:
+            details = _json.loads(details)
+        except ValueError:
+            details = {"raw": details[:256]}
+    if not isinstance(details, dict):
+        details = {}
+    details = dict(details)
+    details["admin_action"] = action
+    details["user_id"] = payload.get("user_id")
+    with supabase_client.cursor() as cur:
+        cur.execute(
+            """INSERT INTO public.security_events
+                   (occurred_at, event_type, route_name, details)
+               VALUES (%s, 'admin_action', %s, %s)""",
+            (_to_ts(payload.get("occurred_at")),
+             (payload.get("route_name") or None),
+             _to_jsonb(details)),
+        )
 
 
 _HANDLERS = {
@@ -517,13 +671,28 @@ def _delivery_queue_upsert(event_key: str, event_type: str, payload: dict) -> No
         # provide idempotency for the actual delivery.
         cls = classify_exception(exc)
         if cls.code in {"42P01", "42P02"}:  # undefined_table / undefined_column
-            log.warning(
+            log.debug(
                 "private.delivery_queue not available (%s); "
                 "falling back to public-table-only idempotency.",
                 cls.code,
             )
         else:
             raise
+
+
+def _to_ts(value):
+    """Return a timezone-aware datetime for a timestamptz column.
+
+    The app stores event times as epoch seconds (float). Postgres rejects a
+    float for a timestamp column, so convert here. Datetimes and strings pass
+    through unchanged.
+    """
+    from datetime import datetime, timezone
+    if value is None or isinstance(value, datetime):
+        return value
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(float(value), tz=timezone.utc)
+    return value
 
 
 def _to_jsonb(value) -> str:
@@ -553,7 +722,10 @@ def status_snapshot() -> dict:
     q = queue_counts()
     q["supabase_configured"] = supabase_client.is_configured()
     q["supabase_reachable"] = supabase_client.ping() if q["supabase_configured"] else False
+    q["db_health"] = supabase_client.health_state()
     q["worker_running"] = is_worker_running()
     q["worker_enabled"] = _is_worker_enabled()
     q["worker_consecutive_failures"] = _consecutive_iteration_failures
+    q["worker_last_run_at"] = _last_run_at
+    q["worker_last_run_items"] = _last_run_items
     return q

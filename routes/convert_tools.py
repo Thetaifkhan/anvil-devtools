@@ -1,10 +1,36 @@
 from flask import Blueprint, current_app, jsonify, request
+from werkzeug.exceptions import HTTPException
 
+from analytics import limiter_identity
 from services import conversion_service as conv
 from services import sql_service
 from services.errors import ToolError
+from services.rate_limit import CONVERT_LIMITER
 
 convert_bp = Blueprint("convert_tools", __name__, url_prefix="/api")
+
+
+def _check_rate_limit():
+    """Reject a caller that exceeds the per-IP conversion limit.
+
+    Returns a 429 response (with the standard Retry-After header) or
+    None when the caller is allowed through.
+    """
+    key = limiter_identity(
+        request.headers.get("X-Forwarded-For", ""),
+        request.remote_addr or "",
+    )
+    allowed, retry_after = CONVERT_LIMITER.check(key)
+    if allowed:
+        return None
+    resp = jsonify({
+        "ok": False,
+        "error": "Too many conversion requests from your address. "
+                 "Please wait a moment and try again.",
+    })
+    resp.status_code = 429
+    resp.headers["Retry-After"] = str(max(1, int(retry_after)))
+    return resp
 
 
 def _text_from_request():
@@ -31,6 +57,9 @@ def _text_from_request():
 
 @convert_bp.post("/json-to-xml")
 def api_json_to_xml():
+    limited = _check_rate_limit()
+    if limited is not None:
+        return limited
     try:
         text, payload = _text_from_request()
         root_name = payload.get("root", "root")
@@ -40,25 +69,36 @@ def api_json_to_xml():
         return jsonify({"ok": True, "result": result})
     except ToolError as e:
         return jsonify({"ok": False, "error": e.message}), 400
-    except Exception as e:
+    except HTTPException:
+        # Flask errors (413 body too large, 404, ...) keep their status.
+        raise
+    except Exception:
         # Unexpected server error
         return jsonify({"ok": False, "error": "An unexpected error occurred."}), 500
 
 
 @convert_bp.post("/xml-to-json")
 def api_xml_to_json():
+    limited = _check_rate_limit()
+    if limited is not None:
+        return limited
     try:
         text, _ = _text_from_request()
         result = conv.xml_to_json(text)
         return jsonify({"ok": True, "result": result})
     except ToolError as e:
         return jsonify({"ok": False, "error": e.message}), 400
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         return jsonify({"ok": False, "error": "An unexpected error occurred."}), 500
 
 
 @convert_bp.post("/xml-format")
 def api_xml_format():
+    limited = _check_rate_limit()
+    if limited is not None:
+        return limited
     try:
         text, payload = _text_from_request()
         minify = payload.get("minify", False)
@@ -73,48 +113,68 @@ def api_xml_format():
         return jsonify({"ok": True, "result": result})
     except ToolError as e:
         return jsonify({"ok": False, "error": e.message}), 400
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         return jsonify({"ok": False, "error": "An unexpected error occurred."}), 500
 
 
 @convert_bp.post("/xml-validate")
 def api_xml_validate():
+    limited = _check_rate_limit()
+    if limited is not None:
+        return limited
     try:
         text, _ = _text_from_request()
         result = conv.validate_xml(text)
         return jsonify({"ok": True, **result})
     except ToolError as e:
         return jsonify({"ok": False, "error": e.message}), 400
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         return jsonify({"ok": False, "error": "An unexpected error occurred."}), 500
 
 
 @convert_bp.post("/json-to-yaml")
 def api_json_to_yaml():
+    limited = _check_rate_limit()
+    if limited is not None:
+        return limited
     try:
         text, _ = _text_from_request()
         result = conv.json_to_yaml(text)
         return jsonify({"ok": True, "result": result})
     except ToolError as e:
         return jsonify({"ok": False, "error": e.message}), 400
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         return jsonify({"ok": False, "error": "An unexpected error occurred."}), 500
 
 
 @convert_bp.post("/yaml-to-json")
 def api_yaml_to_json():
+    limited = _check_rate_limit()
+    if limited is not None:
+        return limited
     try:
         text, _ = _text_from_request()
         result = conv.yaml_to_json(text)
         return jsonify({"ok": True, "result": result})
     except ToolError as e:
         return jsonify({"ok": False, "error": e.message}), 400
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         return jsonify({"ok": False, "error": "An unexpected error occurred."}), 500
 
 
 @convert_bp.post("/csv-to-json")
 def api_csv_to_json():
+    limited = _check_rate_limit()
+    if limited is not None:
+        return limited
     try:
         text, payload = _text_from_request()
         delimiter = payload.get("delimiter") or None
@@ -124,24 +184,34 @@ def api_csv_to_json():
         return jsonify({"ok": True, "result": result, "delimiter": used_delim})
     except ToolError as e:
         return jsonify({"ok": False, "error": e.message}), 400
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         return jsonify({"ok": False, "error": "An unexpected error occurred."}), 500
 
 
 @convert_bp.post("/json-to-csv")
 def api_json_to_csv():
+    limited = _check_rate_limit()
+    if limited is not None:
+        return limited
     try:
         text, _ = _text_from_request()
         result = conv.json_to_csv(text)
         return jsonify({"ok": True, "result": result})
     except ToolError as e:
         return jsonify({"ok": False, "error": e.message}), 400
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         return jsonify({"ok": False, "error": "An unexpected error occurred."}), 500
 
 
 @convert_bp.post("/sql-format")
 def api_sql_format():
+    limited = _check_rate_limit()
+    if limited is not None:
+        return limited
     try:
         text, payload = _text_from_request()
         action = payload.get("action", "format")
@@ -172,5 +242,7 @@ def api_sql_format():
         return jsonify({"ok": True, "result": result})
     except ToolError as e:
         return jsonify({"ok": False, "error": e.message}), 400
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         return jsonify({"ok": False, "error": "An unexpected error occurred."}), 500

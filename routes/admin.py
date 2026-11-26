@@ -25,16 +25,17 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from flask import (Blueprint, abort, current_app, jsonify, redirect,
+from flask import (Blueprint, abort, jsonify, redirect,
                    render_template, request, session, url_for)
 
 import supabase_client
-from analytics import extract_referrer_domain, limiter_identity
+from analytics import limiter_identity
 from auth import admin as auth_admin
 from delivery import counts as queue_counts, list_dead_lettered, list_recent
 from delivery.worker import retry_dead_letter, status_snapshot
+from services.audit import record_admin_action
 from services.rate_limit import ADMIN_LIMITER
 
 log = logging.getLogger("anvil.admin")
@@ -62,19 +63,30 @@ def login_submit():
     )
     allowed, retry_after = ADMIN_LIMITER.check(f"admin-login:{client}")
     if not allowed:
-        return jsonify({
+        resp = jsonify({
             "ok": False,
             "error": "Too many login attempts. Try again shortly.",
             "retry_after_seconds": int(retry_after),
-        }), 429
+        })
+        resp.status_code = 429
+        resp.headers["Retry-After"] = str(max(1, int(retry_after)))
+        return resp
 
     payload = request.get_json(silent=True) or {}
+    unknown = set(payload) - {"access_token"}
+    if unknown:
+        return jsonify({
+            "ok": False,
+            "error": "Unknown field(s): " + ", ".join(sorted(unknown)) + ".",
+        }), 400
     token = (payload.get("access_token") or "").strip()
     if not token or len(token) > 4096:
         return jsonify({"ok": False, "error": "An access token is required."}), 400
 
     user = auth_admin.verify_supabase_token(token)
     if user is None:
+        record_admin_action("admin_login_failed", route="/admin/login",
+                            details={"reason": "verification_failed"})
         return jsonify({
             "ok": False,
             "error": "We could not verify that access token with Supabase.",
@@ -91,12 +103,17 @@ def login_submit():
     # carried in before authentication (session-fixation hygiene).
     session.clear()
     auth_admin.start_session(user)
+    record_admin_action("admin_login", user_id=user.user_id,
+                        route="/admin/login")
     return jsonify({"ok": True, "redirect": url_for("admin.overview")})
 
 
 @admin_bp.post("/logout")
 @auth_admin.require_csrf
 def logout():
+    record_admin_action("admin_logout",
+                        user_id=auth_admin.current_admin_user_id(),
+                        route="/admin/logout")
     auth_admin.end_session()
     return redirect(url_for("admin.login"))
 
@@ -109,13 +126,68 @@ def overview():
     """The landing dashboard. KPIs from every section."""
     supabase_reachable = supabase_client.ping() if supabase_client.is_configured() else False
     q = queue_counts()
+    db_health = supabase_client.health_state()
+    waiting = q.get("contact_pending", 0) + q.get("analytics_pending", 0)
     ctx = {
         "queue": q,
+        "waiting": waiting,
         "supabase_configured": supabase_client.is_configured(),
         "supabase_reachable": supabase_reachable,
+        "db_health": db_health,
         "kpi": _overview_kpis() if supabase_reachable else None,
+        "banner": _overview_banner(supabase_client.is_configured(),
+                                   supabase_reachable, q),
     }
     return render_template("admin/overview.html", **ctx)
+
+
+def _overview_banner(configured: bool, reachable: bool, q: dict):
+    """One status banner: green (all good), amber (waiting/retrying),
+    red (action needed) plus a single plain sentence saying what to do."""
+    if configured and not reachable:
+        return {
+            "level": "red",
+            "title": "Action needed",
+            "message": ("The database is not connected. New submissions are "
+                        "being kept on this server. Nothing is lost, but "
+                        "check the database settings or credentials."),
+        }
+    if not configured:
+        return {
+            "level": "amber",
+            "title": "Database not set up",
+            "message": ("No database is configured, so analytics and contact "
+                        "messages are only kept on this server. Set "
+                        "DATABASE_URL to start saving them."),
+        }
+    dead = q.get("dead_lettered", 0)
+    if dead:
+        return {
+            "level": "red",
+            "title": "Action needed",
+            "message": (f"{dead} item(s) could not be saved after several "
+                        "tries. Review them on the Queue page and press "
+                        "'Retry all failed' once the problem is fixed."),
+        }
+    # "Waiting" counts USER-FACING data (contact messages, analytics).
+    # Internal admin-audit events are bookkeeping: counting them would make
+    # the banner permanently amber right after an admin logs in.
+    pending = (q.get("contact_pending", 0) + q.get("analytics_pending", 0))
+    retrying = q.get("retrying", 0)
+    if pending:
+        return {
+            "level": "amber",
+            "title": "Waiting",
+            "message": (f"{pending} item(s) are waiting to be saved"
+                        + (f", {retrying} retrying after a temporary problem"
+                           if retrying else "")
+                        + ". They are sent automatically - no action needed."),
+        }
+    return {
+        "level": "green",
+        "title": "All good",
+        "message": "Everything is saving normally. Nothing needs your attention.",
+    }
 
 
 def _overview_kpis() -> Dict[str, Any]:
@@ -344,6 +416,14 @@ def support_detail(submission_id):
 @auth_admin.require_csrf
 def support_update(submission_id):
     payload = request.get_json(silent=True) or {}
+    # Reject unknown fields: an admin POST must say exactly what it means.
+    allowed_fields = {"status", "priority", "admin_notes"}
+    unknown = set(payload) - allowed_fields
+    if unknown:
+        return jsonify({
+            "ok": False,
+            "error": "Unknown field(s): " + ", ".join(sorted(unknown)) + ".",
+        }), 400
     status = payload.get("status")
     priority = payload.get("priority")
     admin_notes = payload.get("admin_notes")
@@ -381,7 +461,14 @@ def support_update(submission_id):
             )
             if cur.rowcount == 0:
                 return jsonify({"ok": False, "error": "Submission not found."}), 404
-        # The private.capture_audit_change() trigger writes the audit row.
+        # The private.capture_audit_change() trigger writes the row-level
+        # audit; the outbox-based admin action trail records who did it.
+        record_admin_action("admin_support_update",
+                            user_id=auth_admin.current_admin_user_id(),
+                            route="/admin/support/update",
+                            details={"submission_id": str(submission_id),
+                                     "status": status,
+                                     "priority": priority})
         return jsonify({"ok": True})
     except Exception as exc:
         log.exception("support update failed: %s", exc)
@@ -465,14 +552,83 @@ def queue_status():
                            dead_lettered=dead)
 
 
+@admin_bp.post("/queue/retry-all")
+@auth_admin.require_admin
+@auth_admin.require_csrf
+def queue_retry_all():
+    from flask import redirect
+    items = list_dead_lettered(limit=1000)
+    for item in items:
+        retry_dead_letter(item.id)
+    record_admin_action("admin_queue_retry_all",
+                        user_id=auth_admin.current_admin_user_id(),
+                        route="/admin/queue/retry-all",
+                        details={"requeued": len(items)})
+    return redirect(url_for("admin.overview"))
+
+
 @admin_bp.post("/queue/<int:item_id>/retry")
 @auth_admin.require_admin
 @auth_admin.require_csrf
 def queue_retry(item_id):
     ok = retry_dead_letter(item_id)
+    # Audit every retry attempt, including misses: the audit trail records
+    # what the admin did, not only what succeeded.
+    record_admin_action("admin_queue_retry",
+                        user_id=auth_admin.current_admin_user_id(),
+                        route="/admin/queue/retry",
+                        details={"item_id": item_id, "found": ok})
     if not ok:
         return jsonify({"ok": False, "error": "Item not dead-lettered."}), 404
     return jsonify({"ok": True})
+
+
+# ── Health page ────────────────────────────────────────────────────────────
+
+@admin_bp.get("/health")
+@auth_admin.require_admin
+def health_page():
+    """One page answering: is the system healthy, and what is it doing?
+
+    Plain-language operational facts: database state, last successful write,
+    last worker run, outbox size and disk space, and the running version.
+    """
+    import shutil as _shutil
+    from delivery.worker import is_worker_running, _is_worker_enabled
+    from delivery.worker import _last_run_at, _last_run_items
+
+    db_health = supabase_client.health_state()
+    q = queue_counts()
+    outbox_path = __import__("delivery.outbox", fromlist=["get_db_path"]).get_db_path()
+    try:
+        outbox_bytes = os.path.getsize(outbox_path)
+    except OSError:
+        outbox_bytes = 0
+    try:
+        usage = _shutil.disk_usage(os.path.dirname(outbox_path) or "/")
+        disk_free_mb = usage.free // (1024 * 1024)
+        disk_total_mb = usage.total // (1024 * 1024)
+    except OSError:
+        disk_free_mb = disk_total_mb = None
+
+    return render_template(
+        "admin/health.html",
+        queue=q,
+        db_health=db_health,
+        supabase_configured=supabase_client.is_configured(),
+        supabase_reachable=(supabase_client.ping()
+                            if supabase_client.is_configured() else False),
+        last_success_at=db_health.get("last_success_at") or 0.0,
+        worker_running=is_worker_running(),
+        worker_enabled=_is_worker_enabled(),
+        worker_last_run_at=_last_run_at,
+        worker_last_run_items=_last_run_items,
+        outbox_path=outbox_path,
+        outbox_bytes=outbox_bytes,
+        disk_free_mb=disk_free_mb,
+        disk_total_mb=disk_total_mb,
+        version=os.environ.get("GIT_COMMIT_SHA", "unknown"),
+    )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────

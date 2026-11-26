@@ -48,6 +48,11 @@ import sqlite3
 import threading
 import time
 import uuid
+
+try:  # POSIX only; the lock degrades to a no-op elsewhere.
+    import fcntl
+except ImportError:  # pragma: no cover - Windows
+    fcntl = None
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
@@ -126,6 +131,173 @@ _LOCK = threading.Lock()
 _DB_PATH: Optional[str] = None
 _DURABILITY_VERIFIED = False  # set True by configure(durable=True)
 
+# ── Single-writer guard ──────────────────────────────────────────────
+# One process should ENQUEUE into the outbox. Multiple processes may
+# claim/mark (BEGIN IMMEDIATE + leases keep that safe), but two gunicorn
+# workers both enqueueing onto one SQLite file is a misconfiguration
+# that shows up as 'database is locked' under load. The guard makes the
+# second writer fail fast with a clear message instead.
+_WRITER_LOCK_FD = None
+_WRITER_CONFLICT = False
+_MULTI_PROCESS_WARNED = False
+_last_integrity_check_at = 0.0  # epoch of last quick_check
+
+
+class OutboxWriterConflictError(sqlite3.OperationalError):
+    """Another live process owns the outbox (fail-fast guard)."""
+
+
+def _allow_multi_process() -> bool:
+    return os.environ.get("OUTBOX_ALLOW_MULTI_PROCESS", "0").strip().lower() in (
+        "1", "true", "yes", "on"
+    )
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _acquire_writer_lock(path: str) -> None:
+    """Take the exclusive writer lock for this process, or record a conflict.
+
+    The lock lives in a sidecar file (``<path>.writer.lock``) holding the
+    owning PID. Never blocks: a live foreign owner is recorded as a
+    conflict (fail fast on enqueue with a clear message instead of
+    'database is locked'), a dead owner's lock is re-taken, and the whole
+    acquire is serialised by the module lock so threads cannot deadlock
+    against a lock held by their own process.
+    """
+    global _WRITER_LOCK_FD, _WRITER_CONFLICT, _MULTI_PROCESS_WARNED
+    if fcntl is None:  # pragma: no cover - non-POSIX
+        return
+    with _LOCK:
+        # Release a lock from a previous configure() (tests reconfigure a lot).
+        _release_writer_lock()
+        lock_path = path + ".writer.lock"
+        try:
+            fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                # Someone else holds it. Dead owner? Their flock died with
+                # them, so a second non-blocking attempt either succeeds
+                # (we take over) or another live process raced in.
+                try:
+                    raw_pid = os.read(fd, 32).strip()
+                    owner = int(raw_pid) if raw_pid else None
+                except (OSError, ValueError):
+                    owner = None
+                alive = owner is not None and _pid_alive(owner)
+                if not alive:
+                    try:
+                        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except OSError:
+                        os.close(fd)
+                        return
+                else:
+                    _WRITER_CONFLICT = True
+                    if _allow_multi_process():
+                        if not _MULTI_PROCESS_WARNED:
+                            log.warning(
+                                "Outbox %s is also written by PID %d; "
+                                "OUTBOX_ALLOW_MULTI_PROCESS=1 accepted the risk.",
+                                path, owner,
+                            )
+                            _MULTI_PROCESS_WARNED = True
+                    else:
+                        log.error(
+                            "Another process (PID %d) already owns the outbox at "
+                            "%s. Two gunicorn workers writing one SQLite file "
+                            "cause 'database is locked' errors. Run gunicorn with "
+                            "-w 1 (see RENDER_DEPLOYMENT.md) or set "
+                            "OUTBOX_ALLOW_MULTI_PROCESS=1 to accept the risk.",
+                            owner, path,
+                        )
+                    os.close(fd)
+                    return
+            os.ftruncate(fd, 0)
+            os.write(fd, str(os.getpid()).encode())
+            _WRITER_LOCK_FD = fd
+            _WRITER_CONFLICT = False
+        except OSError as exc:  # pragma: no cover - unreadable dir etc.
+            log.warning("Could not acquire the outbox writer lock: %s", exc)
+
+
+def _release_writer_lock() -> None:
+    global _WRITER_LOCK_FD, _WRITER_CONFLICT
+    fd, _WRITER_LOCK_FD = _WRITER_LOCK_FD, None
+    _WRITER_CONFLICT = False
+    if fd is not None:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+
+
+def _writer_guard(path: str) -> None:
+    """Raise a clear error when another live process owns the outbox."""
+    if _WRITER_CONFLICT and not _allow_multi_process():
+        raise OutboxWriterConflictError(
+            "Another process already owns the outbox at %s. Multiple "
+            "gunicorn workers writing one SQLite file cause 'database is "
+            "locked' errors. Run gunicorn with -w 1 (see "
+            "RENDER_DEPLOYMENT.md), or set OUTBOX_ALLOW_MULTI_PROCESS=1 to "
+            "accept the risk." % path
+        )
+
+
+def _integrity_check_if_due(path: str) -> None:
+    """Run PRAGMA quick_check at most once per day.
+
+    On corruption the broken file (plus its WAL/SHM sidecars) is moved
+    aside and a fresh outbox is initialised, so delivery continues with
+    an empty queue instead of failing forever. The event is logged.
+    """
+    global _last_integrity_check_at
+    now = time.time()
+    if now - _last_integrity_check_at < 86400:
+        return
+    _last_integrity_check_at = now
+    try:
+        conn = sqlite3.connect(path, timeout=5.0)
+        try:
+            row = conn.execute("PRAGMA quick_check").fetchone()
+            result = row[0] if row else "unknown"
+        finally:
+            conn.close()
+        if result == "ok":
+            log.info("Outbox integrity check passed for %s.", path)
+            return
+    except sqlite3.Error as exc:
+        result = "could not check: %s" % exc
+    # Corrupt (or unreadable): move the file aside and start fresh.
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime(now))
+    backup = "%s.corrupt-%s" % (path, stamp)
+    log.error(
+        "Outbox integrity check FAILED for %s (%s). Moving the broken file "
+        "to %s and starting a new outbox. QUEUED CONTACT SUBMISSIONS IN "
+        "THE BROKEN FILE NEED MANUAL REVIEW.",
+        path, result, backup,
+    )
+    try:
+        os.replace(path, backup)
+        for ext in ("-wal", "-shm"):
+            side = path + ext
+            if os.path.exists(side):
+                os.replace(side, backup + ext)
+    except OSError as move_exc:
+        log.error("Could not move the corrupt outbox aside: %s", move_exc)
+        return
+    try:
+        _init_db(path)
+        log.info("A fresh outbox was initialised at %s.", path)
+    except sqlite3.Error as init_exc:
+        log.error("Could not initialise a fresh outbox: %s", init_exc)
+
 
 def configure(path: Optional[str] = None, *, durable: Optional[bool] = None) -> str:
     """Set the SQLite path used by all subsequent operations.
@@ -153,6 +325,8 @@ def configure(path: Optional[str] = None, *, durable: Optional[bool] = None) -> 
         _DB_PATH = resolved
         _DURABILITY_VERIFIED = bool(durable)
     _init_db(resolved)
+    _acquire_writer_lock(resolved)
+    _integrity_check_if_due(resolved)
     if not _DURABILITY_VERIFIED:
         log.warning(
             "Outbox path %s is configured in BEST-EFFORT mode "
@@ -324,6 +498,12 @@ def enqueue(
         raise TypeError("payload must be a dict")
     if event_key is None:
         event_key = str(uuid.uuid4())
+
+    # One writer per file: fail fast with a clear message when a second
+    # live process tries to enqueue (e.g. gunicorn started with -w 2).
+    _writer_guard(get_db_path())
+    # Opportunistic daily corruption check (no-op when not due).
+    _integrity_check_if_due(get_db_path())
 
     # Ensure the SQLite path is configured and the schema is initialised
     # BEFORE we try to acquire the module lock. Otherwise we deadlock.

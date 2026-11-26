@@ -53,14 +53,18 @@ from functools import wraps
 from typing import Optional
 
 import requests
-from flask import current_app, redirect, request, session, url_for
+from flask import redirect, request, session, url_for
 
 log = logging.getLogger("anvil.auth")
 
 SESSION_KEY_USER_ID = "anvil_admin_uid"
 SESSION_KEY_USER_EMAIL = "anvil_admin_email"
 SESSION_KEY_ISSUED_AT = "anvil_admin_iat"
-SESSION_TTL_SECONDS = 4 * 3600  # 4 hours
+SESSION_KEY_LAST_SEEN = "anvil_admin_last_seen"
+SESSION_TTL_SECONDS = 4 * 3600  # 4 hours (absolute cap)
+# A session also expires after this much inactivity, so an unattended
+# browser does not keep admin rights for hours.
+SESSION_IDLE_TIMEOUT_SECONDS = 30 * 60  # 30 minutes idle
 
 # CSRF: a per-session random token. State-changing admin requests must echo
 # it in the X-CSRF-Token header (JSON) or a csrf_token form field. A custom
@@ -132,12 +136,14 @@ def start_session(user: VerifiedUser) -> None:
     session[SESSION_KEY_USER_ID] = user.user_id
     session[SESSION_KEY_USER_EMAIL] = user.email
     session[SESSION_KEY_ISSUED_AT] = time.time()
+    session[SESSION_KEY_LAST_SEEN] = time.time()
     session.permanent = True
 
 
 def end_session() -> None:
     """End the admin session."""
-    for key in (SESSION_KEY_USER_ID, SESSION_KEY_USER_EMAIL, SESSION_KEY_ISSUED_AT):
+    for key in (SESSION_KEY_USER_ID, SESSION_KEY_USER_EMAIL,
+                 SESSION_KEY_ISSUED_AT, SESSION_KEY_LAST_SEEN):
         session.pop(key, None)
 
 
@@ -146,10 +152,17 @@ def current_admin_user_id() -> Optional[str]:
     uid = session.get(SESSION_KEY_USER_ID)
     if not uid:
         return None
+    now = time.time()
     issued_at = session.get(SESSION_KEY_ISSUED_AT) or 0
-    if time.time() - issued_at > SESSION_TTL_SECONDS:
+    # Sessions older than the absolute TTL, or idle for longer than
+    # the idle timeout, are ended. last_seen defaults to issued_at for
+    # sessions created before the idle timeout existed.
+    last_seen = session.get(SESSION_KEY_LAST_SEEN) or issued_at
+    if (now - issued_at > SESSION_TTL_SECONDS
+            or now - last_seen > SESSION_IDLE_TIMEOUT_SECONDS):
         end_session()
         return None
+    session[SESSION_KEY_LAST_SEEN] = now
     return str(uid)
 
 
