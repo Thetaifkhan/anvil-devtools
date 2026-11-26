@@ -29,7 +29,7 @@
 
   <script>
     // Applied before paint to avoid a flash of the wrong theme.
-    // Three first-class themes: light, dracula (default dark), night-owl.
+    // Themes: light (Solarized light), dracula (default), night-owl (neon night).
     (function () {
       try {
         var t = localStorage.getItem('anvil-theme') || 'dracula';
@@ -104,9 +104,9 @@
       </div>
       <a class="btn primary header-cta" href="/workbench" style="text-decoration:none; white-space:nowrap;">Open Workbench</a>
       <div class="theme-toggle" role="group" aria-label="Theme and motion">
-        <button type="button" data-theme="light" aria-label="Light theme" title="Light">☀</button>
+        <button type="button" data-theme="light" aria-label="Solarized light theme" title="Solarized light">☀</button>
         <button type="button" data-theme="dracula" aria-label="Dracula theme" title="Dracula">🦇</button>
-        <button type="button" data-theme="night-owl" aria-label="Night Owl theme" title="Night Owl">🌙</button>
+        <button type="button" data-theme="night-owl" aria-label="Neon night theme" title="Neon night">🌙</button>
         <button type="button" data-theme="high-contrast" aria-label="High contrast theme" title="High contrast">◉</button>
         <button type="button" id="motion-toggle" class="motion-toggle" aria-label="Reduce motion" title="Reduce motion" aria-pressed="false">⏸</button>
       </div>
@@ -129,9 +129,9 @@
     <div class="mobile-nav-row">
       <span class="label">Theme</span>
       <div class="theme-toggle" role="group" aria-label="Theme and motion">
-        <button type="button" data-theme="light" aria-label="Light theme" title="Light">☀</button>
+        <button type="button" data-theme="light" aria-label="Solarized light theme" title="Solarized light">☀</button>
         <button type="button" data-theme="dracula" aria-label="Dracula theme" title="Dracula">🦇</button>
-        <button type="button" data-theme="night-owl" aria-label="Night Owl theme" title="Night Owl">🌙</button>
+        <button type="button" data-theme="night-owl" aria-label="Neon night theme" title="Neon night">🌙</button>
         <button type="button" data-theme="high-contrast" aria-label="High contrast theme" title="High contrast">◉</button>
         <button type="button" id="motion-toggle" class="motion-toggle" aria-label="Reduce motion" title="Reduce motion" aria-pressed="false">⏸</button>
       </div>
